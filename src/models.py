@@ -114,3 +114,52 @@ class GasPrice:
     @property
     def total_gwei(self) -> Decimal:
         return self.base_fee_gwei + self.priority_fee_gwei
+
+
+class ExecutionMode(str, Enum):
+    PAPER = "paper"        # Simulated — no on-chain interaction
+    DRY_RUN = "dry_run"    # Build txs but don't sign/send
+    LIVE = "live"          # Real on-chain execution
+
+
+class ExecutionStatus(str, Enum):
+    PENDING = "pending"
+    SUCCESS = "success"
+    FAILED = "failed"
+    SKIPPED = "skipped"
+    SIMULATED = "simulated"  # Dry-run — logged but not real
+
+
+@dataclass
+class ExecutionRecord:
+    """A single execution action (supply or withdraw)."""
+    id: str                          # UUID
+    action: ActionType
+    protocol: ProtocolName
+    chain: Chain
+    amount_usd: Decimal
+    mode: ExecutionMode
+    tx_hash: str | None = None       # None in paper mode
+    block_number: int | None = None
+    gas_cost_usd: Decimal = Decimal("0")
+    simulated_gas_usd: Decimal = Decimal("0")  # Estimated gas in paper mode
+    reasoning: str = ""
+    status: ExecutionStatus = ExecutionStatus.PENDING
+    error: str | None = None
+    timestamp: datetime = field(default_factory=lambda: datetime.now(tz=timezone.utc))
+
+
+@dataclass
+class PortfolioSnapshot:
+    """Point-in-time portfolio state."""
+    total_capital_usd: Decimal
+    allocated_usd: Decimal
+    reserve_usd: Decimal
+    unrealized_yield_usd: Decimal
+    total_gas_spent_usd: Decimal
+    positions: dict[str, Decimal]    # protocol -> amount_usd
+    timestamp: datetime = field(default_factory=lambda: datetime.now(tz=timezone.utc))
+
+    @property
+    def net_value_usd(self) -> Decimal:
+        return self.total_capital_usd + self.unrealized_yield_usd - self.total_gas_spent_usd
