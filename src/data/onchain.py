@@ -1,4 +1,4 @@
-"""On-chain rate reads via web3.py — direct contract calls.
+"""On-chain rate reads via web3.py -- direct contract calls.
 
 Second data source for cross-validation against DeFi Llama.
 Base chain by default.
@@ -12,77 +12,9 @@ from web3 import AsyncWeb3
 from web3.providers import AsyncHTTPProvider
 
 from src.models import Chain, DataSource, ProtocolName, YieldPool
+from src.protocols.abis import AAVE_POOL_ABI, COMPOUND_COMET_ABI, RAY
 
 logger = logging.getLogger(__name__)
-
-# ─── Aave V3 ────────────────────────────────────────────────────────────────
-# Pool.getReserveData(address asset) returns a tuple where:
-#   index 2 = currentLiquidityRate (RAY = 1e27)
-#   index 4 = currentVariableBorrowRate (RAY)
-AAVE_POOL_ABI = [
-    {
-        "inputs": [{"name": "asset", "type": "address"}],
-        "name": "getReserveData",
-        "outputs": [
-            {
-                "components": [
-                    {"name": "configuration", "type": "uint256"},
-                    {"name": "liquidityIndex", "type": "uint128"},
-                    {"name": "currentLiquidityRate", "type": "uint128"},
-                    {"name": "variableBorrowIndex", "type": "uint128"},
-                    {"name": "currentVariableBorrowRate", "type": "uint128"},
-                    {"name": "currentStableBorrowRate", "type": "uint128"},
-                    {"name": "lastUpdateTimestamp", "type": "uint40"},
-                    {"name": "id", "type": "uint16"},
-                    {"name": "aTokenAddress", "type": "address"},
-                    {"name": "stableDebtTokenAddress", "type": "address"},
-                    {"name": "variableDebtTokenAddress", "type": "address"},
-                    {"name": "interestRateStrategyAddress", "type": "address"},
-                    {"name": "accruedToTreasury", "type": "uint128"},
-                    {"name": "unbacked", "type": "uint128"},
-                    {"name": "isolationModeTotalDebt", "type": "uint128"},
-                ],
-                "name": "",
-                "type": "tuple",
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function",
-    }
-]
-
-# ─── Compound V3 ─────────────────────────────────────────────────────────────
-# Comet.getSupplyRate(uint utilization) and getUtilization()
-COMPOUND_COMET_ABI = [
-    {
-        "inputs": [{"name": "utilization", "type": "uint256"}],
-        "name": "getSupplyRate",
-        "outputs": [{"name": "", "type": "uint64"}],
-        "stateMutability": "view",
-        "type": "function",
-    },
-    {
-        "inputs": [],
-        "name": "getUtilization",
-        "outputs": [{"name": "", "type": "uint256"}],
-        "stateMutability": "view",
-        "type": "function",
-    },
-    {
-        "inputs": [],
-        "name": "totalSupply",
-        "outputs": [{"name": "", "type": "uint256"}],
-        "stateMutability": "view",
-        "type": "function",
-    },
-    {
-        "inputs": [],
-        "name": "totalBorrow",
-        "outputs": [{"name": "", "type": "uint256"}],
-        "stateMutability": "view",
-        "type": "function",
-    },
-]
 
 # Addresses on Base
 ADDRESSES = {
@@ -90,17 +22,19 @@ ADDRESSES = {
         "usdc": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
         "aave_pool": "0xA238Dd80C259a72e81d7e4664a9801593F98d1c5",
         "compound_comet": "0xb125E6687d4313864e53df431d5425969c15Eb2F",
-        "morpho_singleton": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
     }
 }
 
-RAY = Decimal(10**27)
 SECONDS_PER_YEAR = 365.25 * 24 * 3600
+RPC_REQUEST_TIMEOUT = 15  # seconds
 
 
 async def create_web3(rpc_url: str) -> AsyncWeb3:
-    """Create an async web3 instance."""
-    return AsyncWeb3(AsyncHTTPProvider(rpc_url))
+    """Create an async web3 instance with timeout."""
+    return AsyncWeb3(AsyncHTTPProvider(
+        rpc_url,
+        request_kwargs={"timeout": RPC_REQUEST_TIMEOUT},
+    ))
 
 
 async def fetch_aave_rate(
@@ -117,9 +51,8 @@ async def fetch_aave_rate(
         usdc = w3.to_checksum_address(addrs["usdc"])
 
         reserve_data = await pool.functions.getReserveData(usdc).call()
-        # currentLiquidityRate is at index 2, in RAY (1e27)
         liquidity_rate_ray = Decimal(reserve_data[2])
-        supply_apy_pct = (liquidity_rate_ray / RAY) * 100
+        supply_apy_pct = (liquidity_rate_ray / Decimal(RAY)) * 100
 
         logger.info(f"On-chain | Aave V3 | USDC supply APY: {supply_apy_pct:.4f}%")
 
@@ -131,7 +64,7 @@ async def fetch_aave_rate(
             apy_base=supply_apy_pct,
             apy_reward=Decimal("0"),
             apy_total=supply_apy_pct,
-            tvl_usd=Decimal("0"),  # Not available from this call
+            tvl_usd=Decimal("0"),
             utilization=Decimal("0"),
             source=DataSource.ONCHAIN,
             timestamp=datetime.now(tz=timezone.utc),
@@ -156,12 +89,9 @@ async def fetch_compound_rate(
         utilization = await comet.functions.getUtilization().call()
         supply_rate_per_sec = await comet.functions.getSupplyRate(utilization).call()
 
-        # Convert per-second rate to APY percentage
-        # rate is scaled by 1e18
         rate_decimal = Decimal(supply_rate_per_sec) / Decimal(10**18)
         supply_apy = ((1 + rate_decimal) ** Decimal(str(SECONDS_PER_YEAR)) - 1) * 100
 
-        # Utilization is scaled by 1e18
         util_pct = Decimal(utilization) / Decimal(10**18)
 
         logger.info(

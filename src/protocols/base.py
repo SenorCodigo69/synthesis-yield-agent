@@ -8,7 +8,7 @@ from decimal import Decimal
 
 from web3 import AsyncWeb3
 
-from src.models import ActionType, Chain, HealthStatus, ProtocolName, TxReceipt
+from src.models import Chain, HealthStatus, ProtocolName, TxReceipt
 
 
 class ProtocolAdapter(ABC):

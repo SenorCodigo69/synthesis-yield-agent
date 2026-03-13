@@ -14,6 +14,7 @@ import json
 import logging
 import sys
 
+import aiohttp
 import click
 
 from src.config import load_config
@@ -44,8 +45,6 @@ def scan(chain: str, use_json: bool):
 
 async def _scan(chain_name: str, use_json: bool):
     """Fetch and display cross-validated yield rates."""
-    import aiohttp
-
     chain_map = {"base": Chain.BASE, "ethereum": Chain.ETHEREUM, "arbitrum": Chain.ARBITRUM}
     chain = chain_map.get(chain_name.lower())
     if not chain:

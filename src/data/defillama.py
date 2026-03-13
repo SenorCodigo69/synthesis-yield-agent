@@ -31,10 +31,13 @@ CHAIN_NAMES = {
 }
 
 
+HTTP_TIMEOUT = aiohttp.ClientTimeout(total=30)
+
+
 async def fetch_all_pools(session: aiohttp.ClientSession) -> list[dict]:
     """Fetch all yield pools from DeFi Llama."""
     url = f"{BASE_URL}/pools"
-    async with session.get(url) as resp:
+    async with session.get(url, timeout=HTTP_TIMEOUT) as resp:
         resp.raise_for_status()
         data = await resp.json()
         return data.get("data", [])
@@ -105,7 +108,7 @@ async def fetch_protocol_tvl(
     """Fetch total TVL for a protocol from DeFi Llama."""
     url = f"https://api.llama.fi/tvl/{protocol_slug}"
     try:
-        async with session.get(url) as resp:
+        async with session.get(url, timeout=HTTP_TIMEOUT) as resp:
             resp.raise_for_status()
             tvl = await resp.json()
             return Decimal(str(tvl))
