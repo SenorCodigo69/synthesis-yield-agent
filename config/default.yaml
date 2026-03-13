@@ -1,0 +1,58 @@
+# Synthesis Yield Agent — Default Configuration
+
+chain: base  # base | ethereum | arbitrum
+
+# Protocol settings
+protocols:
+  aave_v3:
+    enabled: true
+    chain: base
+    pool_address: "0xA238Dd80C259a72e81d7e4664a9801593F98d1c5"
+    usdc_address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+    defillama_slug: "aave-v3"
+
+  morpho_blue:
+    enabled: true
+    chain: base
+    singleton_address: "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb"
+    usdc_address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+    defillama_slug: "morpho-v1"
+
+  compound_v3:
+    enabled: true
+    chain: base
+    comet_address: "0xb125E6687d4313864e53df431d5425969c15Eb2F"
+    usdc_address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+    defillama_slug: "compound-v3"
+
+# Spending scope constraints
+spending_scope:
+  max_total_allocation_pct: 0.80      # 80% of idle capital
+  max_per_protocol_pct: 0.40          # 40% of yield allocation
+  min_protocol_tvl_usd: 50_000_000   # $50M minimum TVL
+  max_utilization: 0.90               # 90% max utilization
+  max_apy_sanity: 0.50                # 50% max APY (above = unsustainable)
+  gas_ceiling_gwei: 100
+  withdrawal_cooldown_secs: 3600      # 1h between moves
+  reserve_buffer_pct: 0.20            # 20% kept liquid for trading
+
+# Circuit breaker thresholds
+circuit_breakers:
+  depeg_threshold: 0.005              # 0.5% USDC deviation from $1.00
+  tvl_drop_1h_pct: 0.30               # 30% TVL drop in 1h = emergency withdraw
+  tvl_drop_24h_pct: 0.10              # 10% TVL drop in 24h = block new deposits
+  gas_freeze_gwei: 200                # Freeze all moves above this
+  rate_divergence_warn: 0.005         # 0.5% divergence between sources = warning
+  rate_divergence_block: 0.02         # 2% divergence = block action
+
+# Data refresh intervals (seconds)
+polling:
+  rates_interval: 900                 # 15 min
+  gas_interval: 300                   # 5 min
+  tvl_interval: 3600                  # 1 hour
+
+# Rebalancing
+rebalancing:
+  rate_diff_threshold: 0.01           # 1% sustained difference to trigger
+  rate_diff_sustain_hours: 6          # Must sustain for 6h
+  min_move_amount_usd: 100           # Don't rebalance tiny amounts

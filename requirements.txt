@@ -1,0 +1,15 @@
+# Core
+aiohttp>=3.9,<4
+web3>=7.0,<8
+click>=8.1,<9
+
+# Data
+pyyaml>=6.0
+python-dotenv>=1.0
+
+# Storage
+aiosqlite>=0.19
+
+# Dev
+pytest>=8.0
+pytest-asyncio>=0.23
