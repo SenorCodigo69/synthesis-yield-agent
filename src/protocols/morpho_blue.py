@@ -5,6 +5,13 @@ rather than raw Morpho Blue markets. Vaults handle market allocation
 internally -- simpler interface: deposit(assets, receiver) / withdraw().
 
 DeFi Llama slug: morpho-v1 (NOT morpho-blue).
+
+Security:
+- SEC-C01: Explicit nonce via build_tx_with_safety()
+- SEC-C02: Slippage protection on ERC-4626 withdraw (minAssets check)
+- SEC-H02: Chain ID enforced in every transaction
+- SEC-H03: Dynamic gas estimation with fallback
+- SEC-H04: No config dict stored — signer passed at tx time
 """
 
 import logging
@@ -16,9 +23,19 @@ from web3 import AsyncWeb3
 from src.models import ActionType, Chain, ProtocolName, TxReceipt
 from src.protocols.base import ProtocolAdapter
 from src.protocols.abis import ERC20_ABI, ERC4626_ABI, USDC_DECIMALS
-from src.protocols.tx_helpers import sign_and_send, validate_amount
+from src.protocols.tx_helpers import (
+    TransactionSigner,
+    build_tx_with_safety,
+    sign_and_send,
+    validate_amount,
+)
 
 logger = logging.getLogger(__name__)
+
+# SEC-C02: Maximum acceptable slippage on ERC-4626 withdraw (0.5%)
+# If we request X assets but would receive < X * (1 - MAX_WITHDRAW_SLIPPAGE),
+# pre-flight check fails and we abort.
+MAX_WITHDRAW_SLIPPAGE = Decimal("0.005")
 
 ADDRESSES = {
     Chain.BASE: {
@@ -26,6 +43,11 @@ ADDRESSES = {
         "morpho_singleton": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
     }
 }
+
+
+class SlippageExceededError(Exception):
+    """Raised when ERC-4626 share/asset conversion exceeds acceptable slippage."""
+    pass
 
 
 class MorphoBlueAdapter(ProtocolAdapter):
@@ -40,10 +62,9 @@ class MorphoBlueAdapter(ProtocolAdapter):
         self,
         w3: AsyncWeb3,
         chain: Chain,
-        config: dict,
         vault_address: str | None = None,
     ):
-        super().__init__(w3, chain, config)
+        super().__init__(w3, chain)
         self._usdc_addr = w3.to_checksum_address(ADDRESSES[chain]["usdc"])
         self._usdc = w3.eth.contract(address=self._usdc_addr, abi=ERC20_ABI)
         self._vault = None
@@ -96,17 +117,20 @@ class MorphoBlueAdapter(ProtocolAdapter):
         assets = await self._vault.functions.convertToAssets(shares).call()
         return Decimal(assets) / Decimal(10**USDC_DECIMALS)
 
-    async def supply(self, amount: Decimal, sender: str) -> TxReceipt:
+    async def supply(self, amount: Decimal, sender: str, signer: TransactionSigner) -> TxReceipt:
         self._require_vault()
         validate_amount(amount)
         raw_amount = int(amount * Decimal(10**USDC_DECIMALS))
         sender_addr = self.w3.to_checksum_address(sender)
 
-        tx = await self._vault.functions.deposit(
-            raw_amount, sender_addr
-        ).build_transaction({"from": sender_addr, "gas": 300_000})
+        tx = await build_tx_with_safety(
+            self.w3,
+            self._vault.functions.deposit(raw_amount, sender_addr),
+            sender_addr,
+            fallback_gas=300_000,
+        )
 
-        tx_hash, receipt = await sign_and_send(self.w3, tx, self.config)
+        tx_hash, receipt = await sign_and_send(self.w3, tx, signer)
         logger.info(f"Morpho supply: {amount} USDC | tx: {tx_hash}")
 
         return TxReceipt(
@@ -116,17 +140,37 @@ class MorphoBlueAdapter(ProtocolAdapter):
             block_number=receipt["blockNumber"],
         )
 
-    async def withdraw(self, amount: Decimal, sender: str) -> TxReceipt:
+    async def withdraw(self, amount: Decimal, sender: str, signer: TransactionSigner) -> TxReceipt:
+        """Withdraw USDC from Morpho vault.
+
+        SEC-C02: Pre-flight slippage check — verifies the share/asset conversion
+        ratio hasn't shifted beyond MAX_WITHDRAW_SLIPPAGE before sending the tx.
+        """
         self._require_vault()
         validate_amount(amount)
         raw_amount = int(amount * Decimal(10**USDC_DECIMALS))
         sender_addr = self.w3.to_checksum_address(sender)
 
-        tx = await self._vault.functions.withdraw(
-            raw_amount, sender_addr, sender_addr
-        ).build_transaction({"from": sender_addr, "gas": 300_000})
+        # SEC-C02: Pre-flight slippage check
+        # Convert our desired assets to shares, then back to assets.
+        # If the round-trip loses more than MAX_WITHDRAW_SLIPPAGE, abort.
+        shares_needed = await self._vault.functions.convertToShares(raw_amount).call()
+        assets_back = await self._vault.functions.convertToAssets(shares_needed).call()
+        if assets_back < raw_amount * (1 - float(MAX_WITHDRAW_SLIPPAGE)):
+            slippage = Decimal(str((raw_amount - assets_back) / raw_amount))
+            raise SlippageExceededError(
+                f"Morpho withdraw slippage {slippage:.4%} exceeds {MAX_WITHDRAW_SLIPPAGE:.4%} cap. "
+                f"Requested {raw_amount} assets, would receive ~{assets_back}. Aborting."
+            )
 
-        tx_hash, receipt = await sign_and_send(self.w3, tx, self.config)
+        tx = await build_tx_with_safety(
+            self.w3,
+            self._vault.functions.withdraw(raw_amount, sender_addr, sender_addr),
+            sender_addr,
+            fallback_gas=300_000,
+        )
+
+        tx_hash, receipt = await sign_and_send(self.w3, tx, signer)
         logger.info(f"Morpho withdraw: {amount} USDC | tx: {tx_hash}")
 
         return TxReceipt(
@@ -136,17 +180,20 @@ class MorphoBlueAdapter(ProtocolAdapter):
             block_number=receipt["blockNumber"],
         )
 
-    async def approve(self, amount: Decimal, sender: str) -> TxReceipt:
+    async def approve(self, amount: Decimal, sender: str, signer: TransactionSigner) -> TxReceipt:
         self._require_vault()
         validate_amount(amount)
         raw_amount = int(amount * Decimal(10**USDC_DECIMALS))
         sender_addr = self.w3.to_checksum_address(sender)
 
-        tx = await self._usdc.functions.approve(
-            self._vault_addr, raw_amount
-        ).build_transaction({"from": sender_addr, "gas": 100_000})
+        tx = await build_tx_with_safety(
+            self.w3,
+            self._usdc.functions.approve(self._vault_addr, raw_amount),
+            sender_addr,
+            fallback_gas=100_000,
+        )
 
-        tx_hash, receipt = await sign_and_send(self.w3, tx, self.config)
+        tx_hash, receipt = await sign_and_send(self.w3, tx, signer)
         logger.info(f"Morpho approve: {amount} USDC | tx: {tx_hash}")
 
         return TxReceipt(

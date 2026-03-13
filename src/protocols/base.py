@@ -1,6 +1,10 @@
 """Abstract protocol adapter interface.
 
 Adding a new protocol = implementing this interface.
+
+SEC-H04: Adapters no longer store the full config dict. They receive
+only the parameters they need (addresses, chain). Transaction signing
+is done via TransactionSigner, passed at sign time — never stored.
 """
 
 from abc import ABC, abstractmethod
@@ -9,15 +13,15 @@ from decimal import Decimal
 from web3 import AsyncWeb3
 
 from src.models import Chain, HealthStatus, ProtocolName, TxReceipt
+from src.protocols.tx_helpers import TransactionSigner
 
 
 class ProtocolAdapter(ABC):
     """Base class for DeFi protocol adapters."""
 
-    def __init__(self, w3: AsyncWeb3, chain: Chain, config: dict):
+    def __init__(self, w3: AsyncWeb3, chain: Chain):
         self.w3 = w3
         self.chain = chain
-        self.config = config
 
     @property
     @abstractmethod
@@ -56,17 +60,17 @@ class ProtocolAdapter(ABC):
     # ── Write methods ───────────────────────────────────────────────────
 
     @abstractmethod
-    async def supply(self, amount: Decimal, sender: str) -> TxReceipt:
+    async def supply(self, amount: Decimal, sender: str, signer: TransactionSigner) -> TxReceipt:
         """Deposit USDC into the protocol."""
         ...
 
     @abstractmethod
-    async def withdraw(self, amount: Decimal, sender: str) -> TxReceipt:
+    async def withdraw(self, amount: Decimal, sender: str, signer: TransactionSigner) -> TxReceipt:
         """Withdraw USDC from the protocol."""
         ...
 
     @abstractmethod
-    async def approve(self, amount: Decimal, sender: str) -> TxReceipt:
+    async def approve(self, amount: Decimal, sender: str, signer: TransactionSigner) -> TxReceipt:
         """Approve USDC spending for the protocol contract."""
         ...
 
@@ -93,7 +97,7 @@ class ProtocolAdapter(ABC):
         try:
             tvl = await self.get_tvl()
             util = await self.get_utilization()
-            available = tvl * (1 - util)
+            available = tvl * (Decimal("1") - util)
             return available >= amount
         except Exception:
             return False
