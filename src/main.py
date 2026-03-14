@@ -11,6 +11,9 @@ Usage:
     python -m src execute           # Paper-mode execution (one-shot)
     python -m src portfolio         # Show current portfolio state
     python -m src history           # Show execution history
+    python -m src dashboard         # Audit trail dashboard with P&L
+    python -m src health            # System health check
+    python -m src emergency-withdraw  # Emergency withdraw all positions
     python -m src run               # Start the yield agent loop
 """
 
@@ -18,20 +21,32 @@ import asyncio
 import json
 import logging
 import sys
+import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 
 import aiohttp
 import click
 
+from src.circuit_breakers import CircuitBreakers, BreakerAction
 from src.config import load_config, load_spending_scope
 from src.data.aggregator import fetch_validated_rates
 from src.data.gas import fetch_gas_onchain
 from src.database import Database
 from src.executor import Executor
-from src.models import Chain, ExecutionMode, ExecutionStatus, GasPrice
+from src.health_monitor import HealthMonitor
+from src.models import (
+    ActionType,
+    Chain,
+    ExecutionMode,
+    ExecutionRecord,
+    ExecutionStatus,
+    GasPrice,
+    ProtocolName,
+    SpendingScope,
+)
 from src.portfolio import Portfolio
-from src.strategy.allocator import compute_allocations
+from src.strategy.allocator import AllocationPlan, Allocation, compute_allocations
 from src.strategy.rebalancer import check_rebalance_triggers, RebalanceTracker
 
 logging.basicConfig(
@@ -325,6 +340,19 @@ async def _execute(
 
         gas = await _get_gas(rpc_url)
 
+        # Health check before execution
+        breakers = CircuitBreakers(config)
+        monitor = HealthMonitor(breakers, scope)
+        health = monitor.check_system_health(rates, gas)
+
+        if not health.is_operational:
+            click.echo()
+            click.echo("  EXECUTION BLOCKED — system health check failed:")
+            for trip in health.breaker_trips:
+                click.echo(f"    [{trip.severity.upper()}] {trip.message}")
+            click.echo()
+            return
+
         # Compute allocation
         plan = compute_allocations(rates, gas, capital, scope, hold_days)
 
@@ -519,6 +547,327 @@ async def _history(limit: int, use_json: bool):
         await db.close()
 
 
+# ── dashboard ─────────────────────────────────────────────────────────────
+
+@cli.command()
+@click.option("--capital", default=10000, type=float, help="Total capital in USD")
+@click.option("--json-output", "use_json", is_flag=True, help="Output as JSON")
+def dashboard(capital: float, use_json: bool):
+    """Audit trail dashboard with P&L summary."""
+    asyncio.run(_dashboard(Decimal(str(capital)), use_json))
+
+
+async def _dashboard(capital: Decimal, use_json: bool):
+    """Comprehensive dashboard: portfolio + P&L + activity + health."""
+    db = Database()
+    await db.connect()
+
+    try:
+        portfolio = Portfolio(capital, db)
+        loaded = await portfolio.load_from_db()
+        counts = await db.get_execution_count()
+        total_gas = await db.get_total_gas_spent()
+        recent = await db.get_executions(limit=10)
+        snapshots = await db.get_snapshots(limit=50)
+
+        if use_json:
+            output = {
+                "portfolio": portfolio.summary() if loaded else None,
+                "pnl": {
+                    "yield_earned_usd": float(portfolio.unrealized_yield_usd),
+                    "gas_spent_usd": float(total_gas),
+                    "net_profit_usd": float(portfolio.unrealized_yield_usd - total_gas),
+                },
+                "activity": {
+                    "execution_counts": counts,
+                    "total_executions": sum(counts.values()) if counts else 0,
+                    "recent": recent[:5],
+                },
+                "snapshots": len(snapshots),
+            }
+            click.echo(json.dumps(output, indent=2, default=str))
+            return
+
+        click.echo()
+        click.echo("  YIELD AGENT DASHBOARD")
+        click.echo(f"  {'='*70}")
+        click.echo(f"  {datetime.now(tz=timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}")
+
+        # ── Portfolio section
+        click.echo()
+        click.echo("  Portfolio")
+        click.echo(f"  {'-'*70}")
+        if loaded:
+            click.echo(f"  Capital:       ${portfolio.total_capital_usd:>10,.2f}")
+            click.echo(f"  Allocated:     ${portfolio.allocated_usd:>10,.2f}  "
+                        f"({portfolio.allocated_usd / portfolio.total_capital_usd:.1%})")
+            click.echo(f"  Reserve:       ${portfolio.reserve_usd:>10,.2f}")
+            if portfolio.positions:
+                click.echo()
+                for proto, amount in sorted(portfolio.positions.items()):
+                    pct = amount / portfolio.total_capital_usd
+                    bar_len = int(float(pct) * 30)
+                    bar = "#" * bar_len
+                    click.echo(f"    {proto:<15} ${amount:>10,.2f}  ({pct:>5.1%})  [{bar}]")
+        else:
+            click.echo("  No positions — agent has not executed yet.")
+
+        # ── P&L section
+        click.echo()
+        click.echo("  P&L Summary")
+        click.echo(f"  {'-'*70}")
+        net_profit = portfolio.unrealized_yield_usd - total_gas
+        click.echo(f"  Yield earned:  ${portfolio.unrealized_yield_usd:>10,.6f}")
+        click.echo(f"  Gas spent:     ${total_gas:>10,.6f}")
+        click.echo(f"  Net profit:    ${net_profit:>10,.6f}  "
+                    f"({'positive' if net_profit >= 0 else 'NEGATIVE'})")
+        if portfolio.total_capital_usd > 0 and portfolio.unrealized_yield_usd > 0:
+            roi_pct = net_profit / portfolio.total_capital_usd * 100
+            click.echo(f"  ROI:           {roi_pct:>10.4f}%")
+
+        # ── Yield curve (if snapshots exist)
+        if len(snapshots) >= 2:
+            click.echo()
+            click.echo("  Yield Curve (last 10 snapshots)")
+            click.echo(f"  {'-'*70}")
+            for snap in snapshots[:10]:
+                ts = snap.timestamp.strftime('%m-%d %H:%M')
+                yield_bar_len = min(int(float(snap.unrealized_yield_usd) * 10), 40)
+                yield_bar = "#" * max(yield_bar_len, 0)
+                click.echo(
+                    f"    {ts}  Alloc: ${snap.allocated_usd:>8,.0f}  "
+                    f"Yield: ${snap.unrealized_yield_usd:>8,.4f}  [{yield_bar}]"
+                )
+
+        # ── Activity section
+        click.echo()
+        click.echo("  Activity")
+        click.echo(f"  {'-'*70}")
+        total_exec = sum(counts.values()) if counts else 0
+        click.echo(f"  Total executions: {total_exec}")
+        if counts:
+            parts = [f"{status}: {count}" for status, count in sorted(counts.items())]
+            click.echo(f"  Breakdown: {', '.join(parts)}")
+
+        if recent:
+            click.echo()
+            click.echo("  Recent Activity:")
+            for r in recent[:5]:
+                icon = {"success": "+", "failed": "X", "skipped": "-", "simulated": "~"}.get(r["status"], "?")
+                ts = r["timestamp"][:16]
+                click.echo(
+                    f"    [{icon}] {ts}  {r['action']:<10} "
+                    f"{r['protocol']:<15} ${Decimal(r['amount_usd']):>8,.2f}"
+                )
+
+        click.echo()
+    finally:
+        await db.close()
+
+
+# ── health ────────────────────────────────────────────────────────────────
+
+@cli.command()
+@click.option("--chain", default="base", help="Chain (base/ethereum/arbitrum)")
+@click.option("--json-output", "use_json", is_flag=True, help="Output as JSON")
+def health(chain: str, use_json: bool):
+    """Run system health check (circuit breakers + protocol health)."""
+    asyncio.run(_health(chain, use_json))
+
+
+async def _health(chain_name: str, use_json: bool):
+    chain = _parse_chain(chain_name)
+    config = load_config()
+    rpc_url = config.get("rpc_url", "https://mainnet.base.org")
+    scope = load_spending_scope(config)
+
+    async with aiohttp.ClientSession() as session:
+        rates = await fetch_validated_rates(
+            http_session=session, rpc_url=rpc_url, chain=chain,
+        )
+
+    gas = await _get_gas(rpc_url)
+    breakers = CircuitBreakers(config)
+    monitor = HealthMonitor(breakers, scope)
+    system = monitor.check_system_health(rates, gas)
+
+    if use_json:
+        output = {
+            "operational": system.is_operational,
+            "gas_ok": system.gas_ok,
+            "depeg_ok": system.depeg_ok,
+            "breaker_trips": [
+                {
+                    "type": t.breaker.value,
+                    "action": t.action.value,
+                    "severity": t.severity,
+                    "message": t.message,
+                    "protocol": t.protocol,
+                }
+                for t in system.breaker_trips
+            ],
+            "protocols": {
+                name: {
+                    "status": h.status.value,
+                    "checks_passed": h.checks_passed,
+                    "checks_total": h.checks_total,
+                    "issues": h.issues,
+                }
+                for name, h in system.protocols.items()
+            },
+        }
+        click.echo(json.dumps(output, indent=2))
+        return
+
+    click.echo()
+    status_label = "OPERATIONAL" if system.is_operational else "DEGRADED"
+    click.echo(f"  System Health: {status_label}")
+    click.echo(f"  {'='*60}")
+
+    click.echo(f"  Gas:     {'OK' if system.gas_ok else 'FROZEN'}")
+    click.echo(f"  Depeg:   {'OK' if system.depeg_ok else 'ALERT'}")
+
+    if system.breaker_trips:
+        click.echo()
+        click.echo("  Circuit Breaker Trips:")
+        click.echo(f"  {'-'*60}")
+        for trip in system.breaker_trips:
+            icon = "!!!" if trip.severity == "critical" else " ! "
+            click.echo(f"  [{icon}] {trip.message}")
+
+    click.echo()
+    click.echo("  Protocol Health:")
+    click.echo(f"  {'-'*60}")
+    for name, h in system.protocols.items():
+        status_icon = {
+            "healthy": "OK",
+            "warning": "!?",
+            "critical": "XX",
+        }[h.status.value]
+        click.echo(
+            f"  [{status_icon}] {name:<15} "
+            f"{h.checks_passed}/{h.checks_total} checks passed  "
+            f"({h.status.value})"
+        )
+        for issue in h.issues:
+            click.echo(f"       {issue}")
+
+    safe = system.safe_protocols
+    critical = system.critical_protocols
+    click.echo()
+    click.echo(f"  Safe for deposits: {', '.join(safe) if safe else 'NONE'}")
+    if critical:
+        click.echo(f"  WITHDRAW NOW:      {', '.join(critical)}")
+    click.echo()
+
+
+# ── emergency-withdraw ───────────────────────────────────────────────────
+
+@cli.command(name="emergency-withdraw")
+@click.option("--capital", default=10000, type=float, help="Total capital in USD")
+@click.option("--mode", default="paper", type=click.Choice(["paper", "dry_run"]),
+              help="Execution mode")
+@click.option("--reason", default="manual", help="Reason for emergency withdrawal")
+@click.option("--yes", "confirmed", is_flag=True, help="Skip confirmation prompt")
+def emergency_withdraw(capital: float, mode: str, reason: str, confirmed: bool):
+    """Emergency withdraw ALL positions immediately (bypasses cooldowns)."""
+    exec_mode = ExecutionMode.PAPER if mode == "paper" else ExecutionMode.DRY_RUN
+    asyncio.run(_emergency_withdraw(Decimal(str(capital)), exec_mode, reason, confirmed))
+
+
+async def _emergency_withdraw(
+    capital: Decimal,
+    mode: ExecutionMode,
+    reason: str,
+    confirmed: bool,
+):
+    """Withdraw everything — bypasses cooldowns and normal flow."""
+    db = Database()
+    await db.connect()
+
+    try:
+        portfolio = Portfolio(capital, db)
+        loaded = await portfolio.load_from_db()
+
+        if not loaded or not portfolio.positions:
+            click.echo("  No positions to withdraw.")
+            return
+
+        click.echo()
+        click.echo("  EMERGENCY WITHDRAWAL")
+        click.echo(f"  {'='*60}")
+        click.echo(f"  Mode:   {mode.value}")
+        click.echo(f"  Reason: {reason}")
+        click.echo()
+        click.echo("  Positions to withdraw:")
+        for proto, amount in sorted(portfolio.positions.items()):
+            click.echo(f"    {proto:<15} ${amount:>10,.2f}")
+        click.echo(f"  Total:  ${portfolio.allocated_usd:>10,.2f}")
+        click.echo()
+
+        if not confirmed:
+            click.echo("  Add --yes to confirm emergency withdrawal.")
+            return
+
+        # Use a scope with zero cooldown for emergency
+        emergency_scope = SpendingScope(withdrawal_cooldown_secs=0)
+        gas = GasPrice(
+            base_fee_gwei=Decimal("0.01"),
+            priority_fee_gwei=Decimal("0.001"),
+            source="emergency-default",
+        )
+
+        # Build withdrawal plan for all positions
+        records = []
+        for proto_key, amount in list(portfolio.positions.items()):
+            try:
+                protocol = ProtocolName(proto_key)
+            except ValueError:
+                click.echo(f"  Skipping unknown protocol: {proto_key}")
+                continue
+
+            record = ExecutionRecord(
+                id=str(uuid.uuid4()),
+                action=ActionType.WITHDRAW,
+                protocol=protocol,
+                chain=Chain.BASE,
+                amount_usd=amount,
+                mode=mode,
+                reasoning=f"EMERGENCY WITHDRAW: {reason}",
+            )
+
+            if mode == ExecutionMode.PAPER:
+                record.tx_hash = f"emergency-{record.id[:8]}"
+                record.block_number = 0
+                record.simulated_gas_usd = Decimal("0.001")
+                portfolio.apply_execution(record)
+                record.status = ExecutionStatus.SUCCESS
+            else:
+                record.tx_hash = f"emergency-dryrun-{record.id[:8]}"
+                record.block_number = 0
+                record.simulated_gas_usd = Decimal("0.001")
+                record.status = ExecutionStatus.SIMULATED
+
+            await db.insert_execution(record)
+            records.append(record)
+
+            click.echo(
+                f"  [{record.status.value.upper()}] Withdraw {proto_key}: "
+                f"${amount:,.2f}"
+            )
+
+        if mode == ExecutionMode.PAPER:
+            await portfolio.save_snapshot()
+
+        click.echo()
+        click.echo(f"  Emergency withdrawal complete: {len(records)} actions")
+        click.echo(f"  Portfolio allocated: ${portfolio.allocated_usd:,.2f}")
+        click.echo(f"  Portfolio reserve:   ${portfolio.reserve_usd:,.2f}")
+        click.echo()
+    finally:
+        await db.close()
+
+
 # ── run (agent loop) ─────────────────────────────────────────────────────
 
 @cli.command()
@@ -533,7 +882,10 @@ def run(interval: int, capital: float, mode: str):
 
 
 async def _run(interval: int, capital: Decimal, mode: ExecutionMode):
-    """Main agent loop — scan, score, allocate, execute, monitor."""
+    """Main agent loop — scan, score, allocate, execute, monitor.
+
+    Now with circuit breakers and health monitoring per cycle.
+    """
     config = load_config()
     rpc_url = config.get("rpc_url", "https://mainnet.base.org")
     scope = load_spending_scope(config)
@@ -541,6 +893,8 @@ async def _run(interval: int, capital: Decimal, mode: ExecutionMode):
         rate_diff_threshold=Decimal(str(config.get("rebalancing", {}).get("rate_diff_threshold", 0.01))),
         rate_diff_sustain_hours=config.get("rebalancing", {}).get("rate_diff_sustain_hours", 6),
     )
+    breakers = CircuitBreakers(config)
+    monitor = HealthMonitor(breakers, scope)
 
     db = Database()
     await db.connect()
@@ -555,6 +909,7 @@ async def _run(interval: int, capital: Decimal, mode: ExecutionMode):
         )
         click.echo(f"Portfolio: ${portfolio.allocated_usd:,.0f} allocated, "
                     f"${portfolio.reserve_usd:,.0f} reserve")
+        click.echo("Circuit breakers: depeg, TVL crash, gas freeze, rate divergence")
         click.echo("Press Ctrl+C to stop.\n")
 
         cycle = 0
@@ -574,6 +929,53 @@ async def _run(interval: int, capital: Decimal, mode: ExecutionMode):
 
                 gas = await _get_gas(rpc_url)
                 tracker.record_rates(rates)
+
+                # ── Circuit breaker check ─────────────────────────────
+                system_health = monitor.check_system_health(rates, gas)
+                trips = system_health.breaker_trips
+
+                if trips:
+                    for trip in trips:
+                        click.echo(f"  *** [{trip.severity.upper()}] {trip.message}")
+
+                # Handle emergency withdrawals triggered by circuit breakers
+                if breakers.requires_emergency_withdraw(trips) and portfolio.positions:
+                    click.echo("  !!! CIRCUIT BREAKER EMERGENCY — withdrawing all positions")
+                    emergency_scope = SpendingScope(withdrawal_cooldown_secs=0)
+                    emergency_executor = Executor(
+                        mode=mode, db=db, portfolio=portfolio,
+                        scope=emergency_scope, gas_price=gas,
+                    )
+                    # Build full-withdrawal plan
+                    withdraw_allocs = []
+                    for proto_key in list(portfolio.positions.keys()):
+                        try:
+                            proto = ProtocolName(proto_key)
+                        except ValueError:
+                            continue
+                        # Target = 0 for all protocols → executor computes full withdrawal
+                    empty_plan = AllocationPlan(
+                        allocations=[],
+                        scored_protocols=[],
+                        total_allocated_usd=Decimal("0"),
+                        total_capital_usd=capital,
+                        reserve_usd=capital,
+                    )
+                    emergency_records = await emergency_executor.execute_plan(empty_plan, rates)
+                    for r in emergency_records:
+                        click.echo(
+                            f"  !!! {r.action.value} {r.protocol.value}: "
+                            f"${r.amount_usd:,.0f} ({r.status.value})"
+                        )
+
+                # If system is frozen (gas too high), skip execution
+                if not system_health.is_operational:
+                    click.echo("  System degraded — skipping execution this cycle")
+                    click.echo()
+                    await asyncio.sleep(interval)
+                    continue
+
+                # ── Normal cycle ──────────────────────────────────────
 
                 # Accrue yield on existing positions
                 if last_cycle_time and portfolio.positions:
@@ -606,12 +1008,14 @@ async def _run(interval: int, capital: Decimal, mode: ExecutionMode):
 
                 # Log summary
                 successful = sum(1 for r in records if r.status in (ExecutionStatus.SUCCESS, ExecutionStatus.SIMULATED))
+                health_label = "OK" if system_health.is_operational else "DEGRADED"
                 click.echo(
                     f"  {len(rates)} rates | "
                     f"{plan.eligible_count} eligible | "
                     f"${portfolio.allocated_usd:,.0f} allocated | "
                     f"{successful}/{len(records)} executed | "
-                    f"{len(signals)} signals"
+                    f"{len(signals)} signals | "
+                    f"health: {health_label}"
                 )
 
                 for a_proto, a_amount in sorted(portfolio.positions.items()):
