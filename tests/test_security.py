@@ -20,7 +20,7 @@ from src.protocols.tx_helpers import (
     validate_chain_id,
 )
 from src.data.gas import estimate_tx_cost_usd
-from src.models import GasPrice, SpendingScope
+from src.models import Chain, DataSource, GasPrice, ProtocolName, SpendingScope, ValidatedRate
 
 
 # ── SEC-001: Private key validation ──────────────────────────────────────
@@ -261,3 +261,102 @@ class TestCompoundRateSanity:
         from src.protocols.compound_v3 import MAX_RATE_PER_SEC
         assert MAX_RATE_PER_SEC > 0
         assert MAX_RATE_PER_SEC < Decimal("1e-6")  # Should be very small
+
+    def test_onchain_max_rate_constant_exists(self):
+        """SEC5-M02: on-chain reader must also have rate sanity check."""
+        from src.data.onchain import MAX_RATE_PER_SEC
+        assert MAX_RATE_PER_SEC > 0
+        assert MAX_RATE_PER_SEC < Decimal("1e-6")
+
+
+# ── SEC5-H01: ERC4626 ABI completeness ──────────────────────────────────
+
+class TestERC4626ABI:
+    def test_convert_to_shares_in_abi(self):
+        """SEC5-H01: convertToShares must be in ERC4626 ABI for slippage check."""
+        from src.protocols.abis import ERC4626_ABI
+        fn_names = {fn["name"] for fn in ERC4626_ABI}
+        assert "convertToShares" in fn_names
+        assert "convertToAssets" in fn_names
+
+    def test_all_required_erc4626_functions(self):
+        from src.protocols.abis import ERC4626_ABI
+        fn_names = {fn["name"] for fn in ERC4626_ABI}
+        required = {"deposit", "withdraw", "convertToAssets", "convertToShares",
+                     "balanceOf", "totalAssets", "totalSupply"}
+        assert required.issubset(fn_names)
+
+
+# ── SEC5-M01: Depeg price validation ────────────────────────────────────
+
+class TestDepegPriceValidation:
+    def test_normal_price_passes(self):
+        from src.depeg_monitor import _validate_usdc_price
+        result = _validate_usdc_price(Decimal("0.9999"), "test")
+        assert result == Decimal("0.9999")
+
+    def test_zero_price_rejected(self):
+        from src.depeg_monitor import _validate_usdc_price
+        result = _validate_usdc_price(Decimal("0.0"), "test")
+        assert result is None
+
+    def test_negative_price_rejected(self):
+        from src.depeg_monitor import _validate_usdc_price
+        result = _validate_usdc_price(Decimal("-1.0"), "test")
+        assert result is None
+
+    def test_insane_high_price_rejected(self):
+        from src.depeg_monitor import _validate_usdc_price
+        result = _validate_usdc_price(Decimal("999.0"), "test")
+        assert result is None
+
+    def test_boundary_prices_pass(self):
+        from src.depeg_monitor import _validate_usdc_price
+        assert _validate_usdc_price(Decimal("0.50"), "test") is not None
+        assert _validate_usdc_price(Decimal("1.50"), "test") is not None
+
+    def test_just_outside_boundary_rejected(self):
+        from src.depeg_monitor import _validate_usdc_price
+        assert _validate_usdc_price(Decimal("0.49"), "test") is None
+        assert _validate_usdc_price(Decimal("1.51"), "test") is None
+
+
+# ── SEC5-L02: Net APY hold_days guard ────────────────────────────────────
+
+class TestNetAPYGuards:
+    def test_zero_hold_days_no_crash(self):
+        from src.strategy.net_apy import calculate_net_apy
+        rate = ValidatedRate(
+            protocol=ProtocolName.AAVE_V3,
+            chain=Chain.BASE,
+            apy_median=Decimal("3.50"),
+            tvl_usd=Decimal("200000000"),
+            utilization=Decimal("0.65"),
+            is_valid=True,
+        )
+        gas = GasPrice(
+            base_fee_gwei=Decimal("0.01"),
+            priority_fee_gwei=Decimal("0.001"),
+            source="test",
+        )
+        # Should not crash
+        result = calculate_net_apy(rate, gas, Decimal("10000"), hold_days=0)
+        assert result.net_apy == Decimal("0")
+
+    def test_negative_hold_days_no_crash(self):
+        from src.strategy.net_apy import calculate_net_apy
+        rate = ValidatedRate(
+            protocol=ProtocolName.AAVE_V3,
+            chain=Chain.BASE,
+            apy_median=Decimal("3.50"),
+            tvl_usd=Decimal("200000000"),
+            utilization=Decimal("0.65"),
+            is_valid=True,
+        )
+        gas = GasPrice(
+            base_fee_gwei=Decimal("0.01"),
+            priority_fee_gwei=Decimal("0.001"),
+            source="test",
+        )
+        result = calculate_net_apy(rate, gas, Decimal("10000"), hold_days=-5)
+        assert result.net_apy == Decimal("0")

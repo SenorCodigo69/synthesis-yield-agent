@@ -156,8 +156,9 @@ class MorphoBlueAdapter(ProtocolAdapter):
         # If the round-trip loses more than MAX_WITHDRAW_SLIPPAGE, abort.
         shares_needed = await self._vault.functions.convertToShares(raw_amount).call()
         assets_back = await self._vault.functions.convertToAssets(shares_needed).call()
-        if assets_back < raw_amount * (1 - float(MAX_WITHDRAW_SLIPPAGE)):
-            slippage = Decimal(str((raw_amount - assets_back) / raw_amount))
+        min_acceptable = int(Decimal(raw_amount) * (Decimal("1") - MAX_WITHDRAW_SLIPPAGE))
+        if assets_back < min_acceptable:
+            slippage = Decimal(str(raw_amount - assets_back)) / Decimal(str(raw_amount))
             raise SlippageExceededError(
                 f"Morpho withdraw slippage {slippage:.4%} exceeds {MAX_WITHDRAW_SLIPPAGE:.4%} cap. "
                 f"Requested {raw_amount} assets, would receive ~{assets_back}. Aborting."

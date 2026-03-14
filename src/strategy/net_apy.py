@@ -76,13 +76,13 @@ def calculate_net_apy(
     gross_apy = rate.apy_median
     gas_cost_usd = estimate_gas_cost_usd(gas_price, eth_price_usd)
 
-    if amount_usd <= 0:
+    if amount_usd <= 0 or hold_days <= 0:
         return NetAPY(
             protocol_name=rate.protocol.value,
             gross_apy=gross_apy,
             gas_cost_usd=gas_cost_usd,
             net_apy=Decimal("0"),
-            hold_days=hold_days,
+            hold_days=max(hold_days, 1),
             amount_usd=amount_usd,
         )
 

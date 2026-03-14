@@ -17,6 +17,12 @@ DEFILLAMA_STABLES_URL = "https://stablecoins.llama.fi/stablecoinprices/current"
 HTTP_TIMEOUT = aiohttp.ClientTimeout(total=10)
 
 
+# Sanity bounds for USDC price — any value outside this range is treated
+# as corrupt data (API compromise, parsing error, etc.)
+USDC_PRICE_FLOOR = Decimal("0.50")
+USDC_PRICE_CEILING = Decimal("1.50")
+
+
 async def fetch_usdc_price(session: aiohttp.ClientSession) -> Decimal:
     """Fetch current USDC price from CoinGecko, fallback to DeFi Llama.
 
@@ -36,6 +42,22 @@ async def fetch_usdc_price(session: aiohttp.ClientSession) -> Decimal:
     return Decimal("1.0")
 
 
+def _validate_usdc_price(price: Decimal, source: str) -> Decimal | None:
+    """Validate fetched USDC price is within sane bounds.
+
+    Rejects clearly corrupt values (API compromise, parsing errors).
+    USDC at $0.50 or $1.50 would already be a catastrophic event —
+    anything beyond that is data corruption, not a real price.
+    """
+    if price < USDC_PRICE_FLOOR or price > USDC_PRICE_CEILING:
+        logger.error(
+            f"USDC price ${price:.4f} from {source} outside sane bounds "
+            f"[${USDC_PRICE_FLOOR}-${USDC_PRICE_CEILING}] — rejecting as corrupt"
+        )
+        return None
+    return price
+
+
 async def _fetch_coingecko(session: aiohttp.ClientSession) -> Decimal | None:
     """Fetch USDC price from CoinGecko free API."""
     try:
@@ -48,8 +70,10 @@ async def _fetch_coingecko(session: aiohttp.ClientSession) -> Decimal | None:
             price = data.get("usd-coin", {}).get("usd")
             if price is not None:
                 result = Decimal(str(price))
-                logger.info(f"USDC price (CoinGecko): ${result:.4f}")
-                return result
+                validated = _validate_usdc_price(result, "CoinGecko")
+                if validated is not None:
+                    logger.info(f"USDC price (CoinGecko): ${validated:.4f}")
+                    return validated
     except Exception as e:
         logger.warning(f"CoinGecko USDC price fetch failed: {e}")
     return None
@@ -67,8 +91,10 @@ async def _fetch_defillama(session: aiohttp.ClientSession) -> Decimal | None:
             price = data.get("usd-coin", {}).get("price")
             if price is not None:
                 result = Decimal(str(price))
-                logger.info(f"USDC price (DeFi Llama): ${result:.4f}")
-                return result
+                validated = _validate_usdc_price(result, "DeFi Llama")
+                if validated is not None:
+                    logger.info(f"USDC price (DeFi Llama): ${validated:.4f}")
+                    return validated
     except Exception as e:
         logger.warning(f"DeFi Llama USDC price fetch failed: {e}")
     return None

@@ -167,6 +167,13 @@ ERC4626_ABI = [
         "type": "function",
     },
     {
+        "inputs": [{"name": "assets", "type": "uint256"}],
+        "name": "convertToShares",
+        "outputs": [{"name": "shares", "type": "uint256"}],
+        "stateMutability": "view",
+        "type": "function",
+    },
+    {
         "inputs": [{"name": "account", "type": "address"}],
         "name": "balanceOf",
         "outputs": [{"name": "", "type": "uint256"}],

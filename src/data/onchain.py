@@ -28,6 +28,9 @@ ADDRESSES = {
 SECONDS_PER_YEAR = 365.25 * 24 * 3600
 RPC_REQUEST_TIMEOUT = 15  # seconds
 
+# Max rate per second (~30% APY) — anything above is corrupt on-chain data
+MAX_RATE_PER_SEC = Decimal("1e-8")
+
 
 async def create_web3(rpc_url: str) -> AsyncWeb3:
     """Create an async web3 instance with timeout."""
@@ -90,6 +93,15 @@ async def fetch_compound_rate(
         supply_rate_per_sec = await comet.functions.getSupplyRate(utilization).call()
 
         rate_decimal = Decimal(supply_rate_per_sec) / Decimal(10**18)
+
+        # Sanity check: reject corrupt on-chain data before expensive exponentiation
+        if rate_decimal > MAX_RATE_PER_SEC:
+            logger.error(
+                f"Compound on-chain rate {rate_decimal} exceeds sanity cap "
+                f"{MAX_RATE_PER_SEC} (~30% APY) — treating as invalid"
+            )
+            return None
+
         supply_apy = ((1 + rate_decimal) ** Decimal(str(SECONDS_PER_YEAR)) - 1) * 100
 
         util_pct = Decimal(utilization) / Decimal(10**18)
