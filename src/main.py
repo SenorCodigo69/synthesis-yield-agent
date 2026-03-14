@@ -880,6 +880,54 @@ async def _emergency_withdraw(
         await db.close()
 
 
+# ── register (ERC-8004) ───────────────────────────────────────────────────
+
+@cli.command()
+@click.option("--network", default="base_sepolia",
+              type=click.Choice(["base_sepolia", "mainnet"]),
+              help="Network to register on")
+@click.option("--rpc-url", default=None, help="RPC URL (defaults to config)")
+def register(network: str, rpc_url: str | None):
+    """Register agent on ERC-8004 Identity Registry."""
+    asyncio.run(_register(network, rpc_url))
+
+
+async def _register(network: str, rpc_url: str | None):
+    from src.erc8004 import register_agent, AgentRegistration, REGISTRIES
+
+    config = load_config()
+    private_key = config.get("private_key")
+
+    if not private_key:
+        click.echo("  Error: PRIVATE_KEY not set in .env — required for registration.")
+        return
+
+    if not rpc_url:
+        if network == "base_sepolia":
+            rpc_url = "https://sepolia.base.org"
+        else:
+            rpc_url = config.get("rpc_url", "https://mainnet.base.org")
+
+    reg = AgentRegistration()
+    registry_info = REGISTRIES[network]
+
+    click.echo()
+    click.echo("  ERC-8004 Agent Registration")
+    click.echo(f"  {'='*50}")
+    click.echo(f"  Network:  {network}")
+    click.echo(f"  Registry: {registry_info['identity']}")
+    click.echo(f"  Name:     {reg.name}")
+    click.echo()
+
+    result = await register_agent(rpc_url, private_key, network)
+
+    if result:
+        click.echo(f"  Registration successful! Block: {result}")
+    else:
+        click.echo("  Registration failed — check logs.")
+    click.echo()
+
+
 # ── run (agent loop) ─────────────────────────────────────────────────────
 
 @cli.command()
