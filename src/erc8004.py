@@ -11,7 +11,6 @@ Usage:
 import json
 import logging
 from dataclasses import dataclass
-from decimal import Decimal
 
 logger = logging.getLogger(__name__)
 
@@ -99,7 +98,7 @@ async def register_agent(
 ) -> int | None:
     """Register the yield agent on ERC-8004 Identity Registry.
 
-    Returns the agentId (uint256) on success, None on failure.
+    Returns the block number on success, None on failure.
     """
     from web3 import AsyncWeb3
 
