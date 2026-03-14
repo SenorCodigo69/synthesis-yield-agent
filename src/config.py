@@ -36,10 +36,19 @@ def load_config(config_path: Path | None = None) -> dict:
     return config
 
 
+class SpendingScopeError(ValueError):
+    """Raised when spending scope config values are out of safe bounds."""
+    pass
+
+
 def load_spending_scope(config: dict) -> SpendingScope:
-    """Extract spending scope from config."""
+    """Extract and validate spending scope from config.
+
+    Validates that all values are within safe bounds to prevent
+    misconfiguration from causing unexpected behavior.
+    """
     sc = config.get("spending_scope", {})
-    return SpendingScope(
+    scope = SpendingScope(
         max_total_allocation_pct=Decimal(str(sc.get("max_total_allocation_pct", 0.80))),
         max_per_protocol_pct=Decimal(str(sc.get("max_per_protocol_pct", 0.40))),
         min_protocol_tvl_usd=Decimal(str(sc.get("min_protocol_tvl_usd", 50_000_000))),
@@ -49,3 +58,41 @@ def load_spending_scope(config: dict) -> SpendingScope:
         withdrawal_cooldown_secs=sc.get("withdrawal_cooldown_secs", 3600),
         reserve_buffer_pct=Decimal(str(sc.get("reserve_buffer_pct", 0.20))),
     )
+    _validate_spending_scope(scope)
+    return scope
+
+
+def _validate_spending_scope(scope: SpendingScope) -> None:
+    """Validate spending scope values are within safe bounds."""
+    if not (Decimal("0") < scope.max_total_allocation_pct <= Decimal("1.0")):
+        raise SpendingScopeError(
+            f"max_total_allocation_pct must be (0, 1.0], got {scope.max_total_allocation_pct}"
+        )
+    if not (Decimal("0") < scope.max_per_protocol_pct <= Decimal("1.0")):
+        raise SpendingScopeError(
+            f"max_per_protocol_pct must be (0, 1.0], got {scope.max_per_protocol_pct}"
+        )
+    if scope.min_protocol_tvl_usd < Decimal("0"):
+        raise SpendingScopeError(
+            f"min_protocol_tvl_usd must be >= 0, got {scope.min_protocol_tvl_usd}"
+        )
+    if not (Decimal("0") < scope.max_utilization <= Decimal("1.0")):
+        raise SpendingScopeError(
+            f"max_utilization must be (0, 1.0], got {scope.max_utilization}"
+        )
+    if scope.max_apy_sanity <= Decimal("0"):
+        raise SpendingScopeError(
+            f"max_apy_sanity must be > 0, got {scope.max_apy_sanity}"
+        )
+    if scope.gas_ceiling_gwei < 0:
+        raise SpendingScopeError(
+            f"gas_ceiling_gwei must be >= 0, got {scope.gas_ceiling_gwei}"
+        )
+    if scope.withdrawal_cooldown_secs < 0:
+        raise SpendingScopeError(
+            f"withdrawal_cooldown_secs must be >= 0, got {scope.withdrawal_cooldown_secs}"
+        )
+    if not (Decimal("0") <= scope.reserve_buffer_pct < Decimal("1.0")):
+        raise SpendingScopeError(
+            f"reserve_buffer_pct must be [0, 1.0), got {scope.reserve_buffer_pct}"
+        )

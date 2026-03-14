@@ -525,3 +525,77 @@ class TestBreakerConfig:
     def test_none_config_uses_defaults(self):
         breakers = CircuitBreakers(None)
         assert breakers.depeg_threshold == Decimal("0.005")
+
+    def test_gas_freeze_gwei_is_decimal(self):
+        """SEC4-L02: gas_freeze_gwei should be Decimal for consistent comparison."""
+        breakers = CircuitBreakers()
+        assert isinstance(breakers.gas_freeze_gwei, Decimal)
+
+
+# ── Spending scope validation tests (SEC4-M02) ───────────────────────────
+
+class TestSpendingScopeValidation:
+    def test_valid_scope_passes(self):
+        from src.config import _validate_spending_scope
+        scope = SpendingScope()
+        _validate_spending_scope(scope)  # Should not raise
+
+    def test_allocation_pct_too_high(self):
+        from src.config import _validate_spending_scope, SpendingScopeError
+        scope = SpendingScope(max_total_allocation_pct=Decimal("1.5"))
+        with pytest.raises(SpendingScopeError, match="max_total_allocation_pct"):
+            _validate_spending_scope(scope)
+
+    def test_allocation_pct_zero(self):
+        from src.config import _validate_spending_scope, SpendingScopeError
+        scope = SpendingScope(max_total_allocation_pct=Decimal("0"))
+        with pytest.raises(SpendingScopeError, match="max_total_allocation_pct"):
+            _validate_spending_scope(scope)
+
+    def test_per_protocol_pct_too_high(self):
+        from src.config import _validate_spending_scope, SpendingScopeError
+        scope = SpendingScope(max_per_protocol_pct=Decimal("2.0"))
+        with pytest.raises(SpendingScopeError, match="max_per_protocol_pct"):
+            _validate_spending_scope(scope)
+
+    def test_negative_tvl_minimum(self):
+        from src.config import _validate_spending_scope, SpendingScopeError
+        scope = SpendingScope(min_protocol_tvl_usd=Decimal("-1000"))
+        with pytest.raises(SpendingScopeError, match="min_protocol_tvl_usd"):
+            _validate_spending_scope(scope)
+
+    def test_utilization_above_one(self):
+        from src.config import _validate_spending_scope, SpendingScopeError
+        scope = SpendingScope(max_utilization=Decimal("1.5"))
+        with pytest.raises(SpendingScopeError, match="max_utilization"):
+            _validate_spending_scope(scope)
+
+    def test_negative_apy_sanity(self):
+        from src.config import _validate_spending_scope, SpendingScopeError
+        scope = SpendingScope(max_apy_sanity=Decimal("-0.1"))
+        with pytest.raises(SpendingScopeError, match="max_apy_sanity"):
+            _validate_spending_scope(scope)
+
+    def test_negative_gas_ceiling(self):
+        from src.config import _validate_spending_scope, SpendingScopeError
+        scope = SpendingScope(gas_ceiling_gwei=-100)
+        with pytest.raises(SpendingScopeError, match="gas_ceiling_gwei"):
+            _validate_spending_scope(scope)
+
+    def test_negative_cooldown(self):
+        from src.config import _validate_spending_scope, SpendingScopeError
+        scope = SpendingScope(withdrawal_cooldown_secs=-60)
+        with pytest.raises(SpendingScopeError, match="withdrawal_cooldown_secs"):
+            _validate_spending_scope(scope)
+
+    def test_reserve_buffer_at_one(self):
+        from src.config import _validate_spending_scope, SpendingScopeError
+        scope = SpendingScope(reserve_buffer_pct=Decimal("1.0"))
+        with pytest.raises(SpendingScopeError, match="reserve_buffer_pct"):
+            _validate_spending_scope(scope)
+
+    def test_zero_cooldown_valid_for_emergency(self):
+        """Zero cooldown is valid (used for emergency withdrawals)."""
+        from src.config import _validate_spending_scope
+        scope = SpendingScope(withdrawal_cooldown_secs=0)
+        _validate_spending_scope(scope)  # Should not raise

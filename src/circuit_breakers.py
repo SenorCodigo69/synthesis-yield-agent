@@ -55,7 +55,7 @@ class CircuitBreakers:
         self.depeg_threshold = Decimal(str(cb.get("depeg_threshold", 0.005)))
         self.tvl_drop_1h_pct = Decimal(str(cb.get("tvl_drop_1h_pct", 0.30)))
         self.tvl_drop_24h_pct = Decimal(str(cb.get("tvl_drop_24h_pct", 0.10)))
-        self.gas_freeze_gwei = cb.get("gas_freeze_gwei", 200)
+        self.gas_freeze_gwei = Decimal(str(cb.get("gas_freeze_gwei", 200)))
         self.rate_divergence_block = Decimal(str(cb.get("rate_divergence_block", 0.02)))
 
         # TVL history for crash detection: protocol -> list of (timestamp, tvl)

@@ -137,6 +137,7 @@ class HealthMonitor:
         issues: list[str] = []
         checks_passed = 0
         checks_total = 0
+        has_breaker_issue = False
 
         # Check 1: Rate validation
         checks_total += 1
@@ -177,6 +178,7 @@ class HealthMonitor:
         if not all_frozen and proto_name not in frozen_protos:
             checks_passed += 1
         else:
+            has_breaker_issue = True
             issues.append("Frozen by circuit breaker")
 
         # Check 6: No critical breaker trips for this protocol
@@ -188,13 +190,14 @@ class HealthMonitor:
         if not proto_trips:
             checks_passed += 1
         else:
+            has_breaker_issue = True
             for t in proto_trips:
                 issues.append(f"Breaker: {t.message}")
 
-        # Determine status
+        # Determine status using structured flags, not string matching
         if checks_passed == checks_total:
             status = HealthStatus.HEALTHY
-        elif any("Breaker" in i or "Frozen" in i for i in issues):
+        elif has_breaker_issue:
             status = HealthStatus.CRITICAL
         elif checks_passed >= checks_total - 1:
             status = HealthStatus.WARNING

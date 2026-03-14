@@ -33,6 +33,7 @@ from src.config import load_config, load_spending_scope
 from src.data.aggregator import fetch_validated_rates
 from src.data.gas import fetch_gas_onchain
 from src.database import Database
+from src.depeg_monitor import fetch_usdc_price
 from src.executor import Executor
 from src.health_monitor import HealthMonitor
 from src.models import (
@@ -340,10 +341,14 @@ async def _execute(
 
         gas = await _get_gas(rpc_url)
 
+        # Fetch live USDC price for depeg detection
+        async with aiohttp.ClientSession() as price_session:
+            usdc_price = await fetch_usdc_price(price_session)
+
         # Health check before execution
         breakers = CircuitBreakers(config)
         monitor = HealthMonitor(breakers, scope)
-        health = monitor.check_system_health(rates, gas)
+        health = monitor.check_system_health(rates, gas, usdc_price)
 
         if not health.is_operational:
             click.echo()
@@ -599,13 +604,20 @@ async def _dashboard(capital: Decimal, use_json: bool):
         click.echo(f"  {'-'*70}")
         if loaded:
             click.echo(f"  Capital:       ${portfolio.total_capital_usd:>10,.2f}")
+            alloc_pct = (
+                portfolio.allocated_usd / portfolio.total_capital_usd
+                if portfolio.total_capital_usd > 0 else Decimal("0")
+            )
             click.echo(f"  Allocated:     ${portfolio.allocated_usd:>10,.2f}  "
-                        f"({portfolio.allocated_usd / portfolio.total_capital_usd:.1%})")
+                        f"({alloc_pct:.1%})")
             click.echo(f"  Reserve:       ${portfolio.reserve_usd:>10,.2f}")
             if portfolio.positions:
                 click.echo()
                 for proto, amount in sorted(portfolio.positions.items()):
-                    pct = amount / portfolio.total_capital_usd
+                    pct = (
+                        amount / portfolio.total_capital_usd
+                        if portfolio.total_capital_usd > 0 else Decimal("0")
+                    )
                     bar_len = int(float(pct) * 30)
                     bar = "#" * bar_len
                     click.echo(f"    {proto:<15} ${amount:>10,.2f}  ({pct:>5.1%})  [{bar}]")
@@ -930,8 +942,12 @@ async def _run(interval: int, capital: Decimal, mode: ExecutionMode):
                 gas = await _get_gas(rpc_url)
                 tracker.record_rates(rates)
 
+                # Fetch live USDC price for depeg detection
+                async with aiohttp.ClientSession() as price_session:
+                    usdc_price = await fetch_usdc_price(price_session)
+
                 # ── Circuit breaker check ─────────────────────────────
-                system_health = monitor.check_system_health(rates, gas)
+                system_health = monitor.check_system_health(rates, gas, usdc_price)
                 trips = system_health.breaker_trips
 
                 if trips:
@@ -946,14 +962,7 @@ async def _run(interval: int, capital: Decimal, mode: ExecutionMode):
                         mode=mode, db=db, portfolio=portfolio,
                         scope=emergency_scope, gas_price=gas,
                     )
-                    # Build full-withdrawal plan
-                    withdraw_allocs = []
-                    for proto_key in list(portfolio.positions.keys()):
-                        try:
-                            proto = ProtocolName(proto_key)
-                        except ValueError:
-                            continue
-                        # Target = 0 for all protocols → executor computes full withdrawal
+                    # Empty plan → executor computes full withdrawal for all positions
                     empty_plan = AllocationPlan(
                         allocations=[],
                         scored_protocols=[],
