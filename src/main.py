@@ -1024,6 +1024,11 @@ async def _run(interval: int, capital: Decimal, mode: ExecutionMode):
                             f"  !!! {r.action.value} {r.protocol.value}: "
                             f"${r.amount_usd:,.0f} ({r.status.value})"
                         )
+                    # Skip rest of cycle after emergency — don't re-deposit
+                    click.echo("  !!! Skipping normal execution after emergency withdraw")
+                    click.echo()
+                    await asyncio.sleep(interval)
+                    continue
 
                 # If system is frozen (gas too high), skip execution
                 if not system_health.is_operational:

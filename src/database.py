@@ -141,6 +141,7 @@ class Database:
     async def get_executions(
         self, limit: int = 50, protocol: str | None = None,
     ) -> list[dict]:
+        limit = min(limit, 10_000)  # Cap to prevent memory exhaustion
         """Fetch recent execution records."""
         db = self._require_connection()
         if protocol:

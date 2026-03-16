@@ -1,6 +1,6 @@
 """Shared ABI fragments used across multiple protocol adapters."""
 
-# Standard ERC-20 approve + balanceOf — used by all adapters
+# Standard ERC-20 approve + allowance + balanceOf — used by all adapters
 ERC20_ABI = [
     {
         "inputs": [
@@ -10,6 +10,16 @@ ERC20_ABI = [
         "name": "approve",
         "outputs": [{"name": "", "type": "bool"}],
         "stateMutability": "nonpayable",
+        "type": "function",
+    },
+    {
+        "inputs": [
+            {"name": "owner", "type": "address"},
+            {"name": "spender", "type": "address"},
+        ],
+        "name": "allowance",
+        "outputs": [{"name": "", "type": "uint256"}],
+        "stateMutability": "view",
         "type": "function",
     },
     {

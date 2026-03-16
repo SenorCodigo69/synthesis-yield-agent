@@ -17,8 +17,14 @@ def load_config(config_path: Path | None = None) -> dict:
     """Load YAML config, merge with env vars."""
     load_dotenv(CONFIG_DIR / ".env")
 
-    path = config_path or CONFIG_DIR / "default.yaml"
-    with open(path) as f:
+    path = Path(config_path) if config_path else CONFIG_DIR / "default.yaml"
+    # Validate config path is within project directory
+    resolved = path.resolve()
+    if not resolved.is_relative_to(PROJECT_ROOT):
+        raise ValueError(
+            f"Config path {resolved} is outside project root {PROJECT_ROOT}"
+        )
+    with open(resolved) as f:
         config = yaml.safe_load(f)
 
     # Override with env vars where set
@@ -28,12 +34,22 @@ def load_config(config_path: Path | None = None) -> dict:
         config["rpc_url"] = "https://mainnet.base.org"
 
     if os.getenv("PRIVATE_KEY"):
-        config["private_key"] = os.getenv("PRIVATE_KEY")
+        config["_private_key"] = os.getenv("PRIVATE_KEY")
 
     if os.getenv("BLOCKNATIVE_API_KEY"):
         config["blocknative_api_key"] = os.getenv("BLOCKNATIVE_API_KEY")
 
     return config
+
+
+def pop_private_key(config: dict) -> str | None:
+    """Extract and remove private key from config dict.
+
+    Call this once during setup, then pass the key to TransactionSigner.
+    The key is deleted from the config dict to prevent accidental exposure
+    via logging or serialization.
+    """
+    return config.pop("_private_key", None)
 
 
 class SpendingScopeError(ValueError):

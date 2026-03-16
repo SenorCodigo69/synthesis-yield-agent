@@ -75,6 +75,10 @@ class Executor:
         gas_price: GasPrice,
         eth_price_usd: Decimal = Decimal("3500"),
     ):
+        if mode == ExecutionMode.LIVE:
+            raise NotImplementedError(
+                "Live mode not implemented — use paper or dry_run"
+            )
         self.mode = mode
         self.db = db
         self.portfolio = portfolio

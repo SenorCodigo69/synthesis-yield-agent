@@ -91,12 +91,19 @@ class AgentRegistration:
         return f"data:application/json;base64,{encoded}"
 
 
+# Maximum gas price (in gwei) for registration — prevents unbounded gas spend
+MAX_REGISTRATION_GAS_GWEI = 50
+
+
 async def register_agent(
     rpc_url: str,
     private_key: str,
     network: str = "base_sepolia",
 ) -> int | None:
     """Register the yield agent on ERC-8004 Identity Registry.
+
+    Accepts a raw private key for standalone registration.
+    For integration with the main agent, use TransactionSigner instead.
 
     Returns the block number on success, None on failure.
     """
@@ -105,6 +112,10 @@ async def register_agent(
     registry_info = REGISTRIES.get(network)
     if not registry_info:
         logger.error(f"Unknown network: {network}")
+        return None
+
+    if not private_key or len(private_key.replace("0x", "")) < 64:
+        logger.error("Invalid private key — must be 32 bytes hex")
         return None
 
     try:
@@ -127,6 +138,16 @@ async def register_agent(
         reg = AgentRegistration()
         token_uri = reg.to_data_uri()
 
+        # Check gas price before building tx — abort if too expensive
+        gas_price = await w3.eth.gas_price
+        gas_price_gwei = gas_price / 10**9
+        if gas_price_gwei > MAX_REGISTRATION_GAS_GWEI:
+            logger.warning(
+                f"Gas price {gas_price_gwei:.1f} gwei exceeds cap "
+                f"{MAX_REGISTRATION_GAS_GWEI} gwei — aborting to avoid overspend"
+            )
+            return None
+
         # Build transaction
         nonce = await w3.eth.get_transaction_count(account.address, "pending")
         tx = await registry.functions.register(token_uri).build_transaction({
@@ -136,12 +157,16 @@ async def register_agent(
             "gas": 500_000,
         })
 
-        # Estimate gas
+        # Estimate gas — if this fails, the tx would likely revert on-chain
         try:
             estimated = await w3.eth.estimate_gas(tx)
             tx["gas"] = int(estimated * 1.2)
-        except Exception:
-            pass  # Use fallback 500k
+        except Exception as e:
+            logger.warning(
+                f"Gas estimation failed (tx may revert): {e}. "
+                f"Aborting to avoid wasting gas."
+            )
+            return None
 
         # Sign and send
         signed = w3.eth.account.sign_transaction(tx, private_key=private_key)
@@ -155,8 +180,6 @@ async def register_agent(
             logger.error(f"Registration tx reverted: {tx_hash.hex()}")
             return None
 
-        # Parse agentId from logs (Transfer event, tokenId is the 4th topic)
-        # For simplicity, log the tx hash and let user check
         logger.info(
             f"ERC-8004 registration successful! "
             f"tx: {tx_hash.hex()} | block: {receipt['blockNumber']}"
