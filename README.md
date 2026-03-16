@@ -79,6 +79,8 @@ python demo_swap.py --live --ai
 | `dashboard` | Audit trail with P&L summary and yield curve |
 | `portfolio` | Current portfolio state from database |
 | `history` | Execution history log |
+| `pools` | Uniswap pool analytics (fee APY, TVL, IL risk) |
+| `lp` | LP position management (mint, collect, exit) |
 | `emergency-withdraw` | Instant full withdrawal (bypasses cooldowns) |
 | `register` | Register on ERC-8004 Identity Registry |
 
@@ -140,6 +142,49 @@ Safety: No private keys pass through the AI. Only public market data is analyzed
 ### ERC-8004 Agent Identity
 
 Registered as **Agent #32272** on the ERC-8004 Identity Registry (Base mainnet). Declared capabilities: yield scanning, risk assessment, portfolio management, safety monitoring.
+
+## Uniswap LP (Liquidity Provision)
+
+Full-range LP position management for WETH-USDC on Base, with AI-driven concentrated liquidity optimization.
+
+### LP Commands
+
+```bash
+python -m src lp --action status --token-id 123              # Read position state
+python -m src lp --action mint --weth 1.0 --usdc 2500        # Mint (dry-run)
+python -m src lp --action mint --weth 1.0 --usdc 2500 --live # Mint (on-chain)
+python -m src lp --action collect --token-id 123 --live      # Collect fees
+python -m src lp --action exit --token-id 123 --live         # Full exit (3 txs)
+```
+
+### LP Features
+
+- **Full-range positions** — mint, collect fees, exit (decrease + collect + burn NFT)
+- **4 fee tiers** — 0.01%, 0.05% (default), 0.3%, 1%
+- **LP Signals** — ATR, Bollinger Bands, RSI, ADX for tick range optimization
+- **Regime detection** — BULL/BEAR/SIDEWAYS classification for range width adjustment
+- **LP Optimizer** — 8-step pipeline: ATR-based width → regime adjustment → ADX gate → RSI skew → Bollinger clamp → safety bounds → price bounds → tick alignment
+- **Tick math** — price ↔ tick conversions for WETH-USDC (18/6 decimals)
+- **Safety** — gas ceiling (5 gwei), deadline enforcement, nonce tracking, zero-amount validation
+
+### Pool Analytics
+
+```bash
+python -m src pools                # USDC-paired pool analytics
+python -m src pools --all-pairs    # All pairs
+python -m src pools --limit 20     # Top 20
+```
+
+Fetches Uniswap V3/V2 pool data from DeFi Llama — fee APY, TVL, IL risk. Used in AI swap reasoning to compare LP yield vs lending yield.
+
+## Execution Logger ("Let the Agent Cook")
+
+Machine-readable audit trail for the [Protocol Labs / EF bounty](https://synthesis.md/):
+
+- **`agent.json`** — capability manifest declaring tools, safety guardrails, and autonomous loop
+- **`src/execution_logger.py`** — structured JSON logger capturing every cycle: steps, tool calls, decisions (with reasoning), executions (with tx hashes), failures, compute budget
+- **Output:** `data/agent_log.json` — bounded to 500 cycles, corrupt file recovery, safe serialization
+- **Read API:** `get_recent_cycles(n)` and `get_stats()` for dashboard/submission
 
 ## Architecture
 
@@ -224,11 +269,11 @@ Key security measures:
 ## Testing
 
 ```bash
-pytest tests/           # 214 tests
+pytest tests/           # 281 tests
 pytest tests/ -v        # Verbose output
 ```
 
-**214 tests** covering data layer, protocols, strategy, execution, portfolio, circuit breakers, health monitor, security, Uniswap adapter, and AI swap reasoning.
+**281 tests** covering data layer, protocols, strategy, execution, portfolio, circuit breakers, health monitor, security, Uniswap adapter, AI swap reasoning, LP management, pool analytics, tick math, and execution logger.
 
 ## Configuration
 
@@ -264,6 +309,11 @@ src/
 ├── uniswap.py           # Uniswap Trading API adapter (Permit2, routing)
 ├── ai_swap.py           # AI-powered swap reasoning (Claude + fallback)
 ├── erc8004.py           # ERC-8004 agent identity registration
+├── execution_logger.py  # Structured JSON execution logger (agent.json companion)
+├── uniswap_lp.py        # LP position management (mint, collect, exit)
+├── lp_signals.py        # Quant signals for tick range optimization
+├── lp_tick_math.py      # Tick ↔ price conversions for WETH-USDC
+├── lp_optimizer.py      # Concentrated LP tick range optimizer
 ├── circuit_breakers.py  # Depeg, TVL crash, gas freeze, rate divergence
 ├── health_monitor.py    # Pre-execution health checks (6 per protocol)
 ├── depeg_monitor.py     # Live USDC price fetching + validation
@@ -271,7 +321,8 @@ src/
 │   ├── aggregator.py    # Cross-validation engine
 │   ├── defillama.py     # DeFi Llama API client
 │   ├── gas.py           # Gas price tracking
-│   └── onchain.py       # Direct contract reads (Aave, Compound)
+│   ├── onchain.py       # Direct contract reads (Aave, Compound)
+│   └── uniswap_pools.py # Uniswap pool analytics (fee APY, TVL, IL risk)
 ├── protocols/
 │   ├── base.py          # Abstract adapter interface
 │   ├── aave_v3.py       # Aave V3 adapter
@@ -285,6 +336,7 @@ src/
     ├── net_apy.py       # Net APY after gas costs
     └── rebalancer.py    # Rebalance trigger engine
 
+agent.json               # Machine-readable capability manifest
 demo.py                  # Agent lifecycle demo (scan -> allocate -> execute)
 demo_swap.py             # Autonomous swap + yield demo (AI reasoning)
 ```
