@@ -982,6 +982,223 @@ async def _pools(usdc_only: bool, max_pools: int):
     click.echo()
 
 
+# ── lp (Uniswap V3 LP) ─────────────────────────────────────────────────
+
+@cli.command()
+@click.option("--action", type=click.Choice(["mint", "collect", "exit", "status"]),
+              default="status", help="LP action to perform")
+@click.option("--weth", "weth_amount", default=None, type=float,
+              help="WETH amount to provide (in WETH units)")
+@click.option("--usdc", "usdc_amount", default=None, type=float,
+              help="USDC amount to provide (in USDC units)")
+@click.option("--token-id", default=None, type=int,
+              help="Position token ID (for collect/exit/status)")
+@click.option("--fee", default=500, type=int,
+              help="Pool fee tier: 100, 500, 3000, 10000 (default: 500 = 0.05%%)")
+@click.option("--live", "is_live", is_flag=True,
+              help="Execute on-chain (default: dry-run)")
+@click.option("--slippage", default=1.0, type=float,
+              help="Slippage tolerance %% (default: 1.0)")
+def lp(action: str, weth_amount: float | None, usdc_amount: float | None,
+       token_id: int | None, fee: int, is_live: bool, slippage: float):
+    """Manage Uniswap V3 LP positions — mint, collect fees, exit."""
+    if slippage > 10.0:
+        click.echo(f"  Error: Slippage {slippage}% exceeds maximum 10%.")
+        return
+    if slippage <= 0:
+        click.echo(f"  Error: Slippage must be positive.")
+        return
+    asyncio.run(_lp(action, weth_amount, usdc_amount, token_id, fee, is_live, slippage))
+
+
+async def _lp(action: str, weth_amount: float | None, usdc_amount: float | None,
+              token_id: int | None, fee: int, is_live: bool, slippage: float):
+    import os
+    from web3 import AsyncWeb3
+    from src.uniswap_lp import (
+        UniswapLPAdapter, full_range_ticks,
+        WETH_BASE, USDC_BASE, WETH_DECIMALS, USDC_DECIMALS, POSITION_MANAGER,
+        FEE_TIERS,
+    )
+
+    config = load_config()
+    rpc_url = config.get("rpc_url", "https://mainnet.base.org")
+    private_key = config.pop("_private_key", None)
+
+    if not private_key and action != "status":
+        click.echo("  Error: PRIVATE_KEY not set in .env")
+        return
+
+    w3 = AsyncWeb3(AsyncWeb3.AsyncHTTPProvider(rpc_url))
+    adapter = UniswapLPAdapter(w3)
+
+    if private_key:
+        from eth_account import Account
+        wallet = Account.from_key(private_key).address
+    else:
+        wallet = "unknown"
+
+    click.echo()
+    click.echo("  Uniswap V3 LP Manager")
+    click.echo(f"  {'='*55}")
+    click.echo(f"  Wallet:           {wallet}")
+    click.echo(f"  PositionManager:  {POSITION_MANAGER}")
+    click.echo(f"  Pool:             WETH-USDC ({fee/10000:.2%} fee)")
+
+    if fee not in FEE_TIERS:
+        click.echo(f"  Error: Invalid fee tier {fee}. Valid: {list(FEE_TIERS.keys())}")
+        return
+
+    tick_lower, tick_upper = full_range_ticks(fee)
+    click.echo(f"  Tick range:       [{tick_lower}, {tick_upper}] (full range)")
+    click.echo()
+
+    if action == "status":
+        # Show wallet balances and position info
+        weth_bal, usdc_bal = await adapter.get_balances(wallet)
+        click.echo(f"  WETH balance:     {weth_bal:.8f}")
+        click.echo(f"  USDC balance:     ${usdc_bal:,.6f}")
+        weth_a, usdc_a = await adapter.get_allowances(wallet)
+        click.echo(f"  WETH allowance:   {'MAX' if weth_a > 10**50 else weth_a}")
+        click.echo(f"  USDC allowance:   {'MAX' if usdc_a > 10**50 else usdc_a}")
+
+        if token_id:
+            click.echo()
+            try:
+                pos = await adapter.get_position(token_id)
+                click.echo(f"  Position #{token_id}:")
+                click.echo(f"    Token0:      {pos.token0}")
+                click.echo(f"    Token1:      {pos.token1}")
+                click.echo(f"    Fee:         {pos.fee / 10000:.2%}")
+                click.echo(f"    Ticks:       [{pos.tick_lower}, {pos.tick_upper}]")
+                click.echo(f"    Liquidity:   {pos.liquidity}")
+                weth_owed = Decimal(str(pos.tokens_owed0)) / Decimal(10**WETH_DECIMALS)
+                usdc_owed = Decimal(str(pos.tokens_owed1)) / Decimal(10**USDC_DECIMALS)
+                click.echo(f"    Fees owed:   {weth_owed:.8f} WETH + ${usdc_owed:,.6f} USDC")
+            except Exception as e:
+                click.echo(f"    Error reading position: {e}")
+
+    elif action == "mint":
+        if weth_amount is None and usdc_amount is None:
+            click.echo("  Error: Specify --weth and/or --usdc amounts")
+            return
+
+        weth_raw = int(Decimal(str(weth_amount or 0)) * Decimal(10**WETH_DECIMALS))
+        usdc_raw = int(Decimal(str(usdc_amount or 0)) * Decimal(10**USDC_DECIMALS))
+
+        # Validate against balance
+        weth_bal, usdc_bal = await adapter.get_balances(wallet)
+        if weth_amount and Decimal(str(weth_amount)) > weth_bal:
+            click.echo(f"  Error: WETH amount {weth_amount} exceeds balance {weth_bal}")
+            return
+        if usdc_amount and Decimal(str(usdc_amount)) > usdc_bal:
+            click.echo(f"  Error: USDC amount {usdc_amount} exceeds balance {usdc_bal}")
+            return
+
+        click.echo(f"  Action:           MINT full-range position")
+        click.echo(f"  WETH deposit:     {weth_amount or 0}")
+        click.echo(f"  USDC deposit:     {usdc_amount or 0}")
+        click.echo(f"  Slippage:         {slippage}%")
+        click.echo()
+
+        if is_live:
+            try:
+                result = await adapter.mint_full_range(
+                    private_key=private_key,
+                    weth_amount=weth_raw,
+                    usdc_amount=usdc_raw,
+                    fee=fee,
+                    slippage_pct=slippage,
+                )
+                click.echo(f"  LP Position Minted!")
+                click.echo(f"    Token ID:    {result.token_id}")
+                click.echo(f"    Liquidity:   {result.liquidity}")
+                weth_used = Decimal(str(result.amount0)) / Decimal(10**WETH_DECIMALS)
+                usdc_used = Decimal(str(result.amount1)) / Decimal(10**USDC_DECIMALS)
+                click.echo(f"    WETH used:   {weth_used:.8f}")
+                click.echo(f"    USDC used:   ${usdc_used:,.6f}")
+                click.echo(f"    Tx hash:     {result.tx_hash}")
+                click.echo(f"    Block:       {result.block_number}")
+                click.echo(f"    Gas used:    {result.gas_used}")
+            except Exception as e:
+                click.echo(f"  Mint failed: {e}")
+        else:
+            click.echo(f"  [DRY RUN — add --live to execute on-chain]")
+            click.echo(f"  Would mint full-range position with:")
+            click.echo(f"    {weth_amount or 0} WETH + {usdc_amount or 0} USDC")
+            click.echo(f"    Fee tier: {fee} ({fee/10000:.2%})")
+            click.echo(f"    Ticks: [{tick_lower}, {tick_upper}]")
+
+    elif action == "collect":
+        if token_id is None:
+            click.echo("  Error: Specify --token-id for the position to collect from")
+            return
+
+        click.echo(f"  Action:           COLLECT fees from position #{token_id}")
+        click.echo()
+
+        if is_live:
+            try:
+                result = await adapter.collect_fees(private_key, token_id)
+                weth_fees = Decimal(str(result.amount0)) / Decimal(10**WETH_DECIMALS)
+                usdc_fees = Decimal(str(result.amount1)) / Decimal(10**USDC_DECIMALS)
+                click.echo(f"  Fees Collected!")
+                click.echo(f"    WETH:        {weth_fees:.8f}")
+                click.echo(f"    USDC:        ${usdc_fees:,.6f}")
+                click.echo(f"    Tx hash:     {result.tx_hash}")
+            except Exception as e:
+                click.echo(f"  Collect failed: {e}")
+        else:
+            click.echo(f"  [DRY RUN — add --live to collect fees]")
+            try:
+                pos = await adapter.get_position(token_id)
+                weth_owed = Decimal(str(pos.tokens_owed0)) / Decimal(10**WETH_DECIMALS)
+                usdc_owed = Decimal(str(pos.tokens_owed1)) / Decimal(10**USDC_DECIMALS)
+                click.echo(f"  Estimated pending fees:")
+                click.echo(f"    WETH:        {weth_owed:.8f}")
+                click.echo(f"    USDC:        ${usdc_owed:,.6f}")
+            except Exception as e:
+                click.echo(f"  Could not read position: {e}")
+
+    elif action == "exit":
+        if token_id is None:
+            click.echo("  Error: Specify --token-id for the position to exit")
+            return
+
+        click.echo(f"  Action:           EXIT position #{token_id}")
+        click.echo(f"  Steps:            1. decreaseLiquidity → 2. collect → 3. burn NFT")
+        click.echo()
+
+        if is_live:
+            try:
+                result = await adapter.exit_position(private_key, token_id)
+                weth_out = Decimal(str(result.amount0)) / Decimal(10**WETH_DECIMALS)
+                usdc_out = Decimal(str(result.amount1)) / Decimal(10**USDC_DECIMALS)
+                click.echo(f"  Position Exited!")
+                click.echo(f"    WETH returned: {weth_out:.8f}")
+                click.echo(f"    USDC returned: ${usdc_out:,.6f}")
+                weth_fees = Decimal(str(result.fees0)) / Decimal(10**WETH_DECIMALS)
+                usdc_fees = Decimal(str(result.fees1)) / Decimal(10**USDC_DECIMALS)
+                click.echo(f"    Fees earned:   {weth_fees:.8f} WETH + ${usdc_fees:,.6f} USDC")
+                click.echo(f"    Tx (decrease): {result.tx_hash_decrease}")
+                click.echo(f"    Tx (collect):  {result.tx_hash_collect}")
+                if result.tx_hash_burn:
+                    click.echo(f"    Tx (burn):     {result.tx_hash_burn}")
+            except Exception as e:
+                click.echo(f"  Exit failed: {e}")
+        else:
+            click.echo(f"  [DRY RUN — add --live to exit position]")
+            try:
+                pos = await adapter.get_position(token_id)
+                click.echo(f"  Position #{token_id}:")
+                click.echo(f"    Liquidity:   {pos.liquidity}")
+                click.echo(f"    Would remove all liquidity, collect tokens + fees, burn NFT")
+            except Exception as e:
+                click.echo(f"  Could not read position: {e}")
+
+    click.echo()
+
+
 # ── swap (Uniswap) ──────────────────────────────────────────────────────
 
 @cli.command()
