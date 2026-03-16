@@ -1,39 +1,44 @@
 # Synthesis Yield Agent
 
-**Autonomous DeFi yield optimization agent** — scans lending protocols for the best USDC supply rates, allocates capital with risk-adjusted scoring, and manages positions with circuit breakers and safety rails.
+**Autonomous DeFi yield optimization agent with AI-powered swap reasoning** — scans lending protocols for the best USDC supply rates, uses Claude AI to decide when to swap tokens, executes via Uniswap Trading API, and deposits into yield protocols. All with circuit breakers and safety rails.
 
 Built for the [Ethereum Foundation Synthesis Hackathon](https://synthesis.md/) (March 13-22, 2026).
 
 > Track: "Agents that pay" — What happens when agents move your money?
+>
+> Bounty: "Agentic Finance — Best Uniswap API Integration"
 
 ## What It Does
 
-The agent autonomously:
-
-1. **Scans** — Fetches USDC yield rates from Aave V3, Morpho Blue, and Compound V3 on Base, cross-validated across DeFi Llama + on-chain contract reads
-2. **Scores** — Evaluates protocol risk (TVL, age, audits, utilization, bad debt history) and computes net APY after gas costs
-3. **Allocates** — Distributes capital proportionally to risk-adjusted yield, respecting per-protocol caps and reserve buffers
-4. **Executes** — Deposits/withdraws in paper mode (simulated) or live mode (on-chain), with full audit trail
-5. **Monitors** — Runs circuit breakers every cycle (USDC depeg, TVL crash, gas freeze, rate divergence), auto-emergency-withdraws on critical conditions
+The agent autonomously runs a full DeFi capital management loop:
 
 ```
-        ┌─────────────────────────────┐
-        │       Yield Agent Core      │
-        │   (autonomous loop)         │
-        └──────────┬──────────────────┘
-                   │
-      ┌────────────┼────────────────┐
-      │            │                │
-┌─────▼──────┐ ┌──▼───────┐ ┌──────▼───────┐
-│ Multi-Src  │ │ Strategy │ │  Execution   │
-│ Data Layer │ │ Engine   │ │  + Safety    │
-└─────┬──────┘ └──┬───────┘ └──────┬───────┘
-      │            │                │
-      ▼            ▼                ▼
-  DeFi Llama   Risk scoring,    Paper/live
-  + on-chain   allocation,     deposit/withdraw
-  reads        rebalancing     + circuit breakers
+  ┌─────────────────────────────────────────────────────────────┐
+  │                   AUTONOMOUS AGENT LOOP                     │
+  │                                                             │
+  │   1. SCAN       Fetch yield rates (DeFi Llama + on-chain)  │
+  │        ↓                                                    │
+  │   2. THINK      AI analyzes rates, balances, market data   │
+  │        ↓        (Claude Haiku or rule-based fallback)       │
+  │        ↓                                                    │
+  │   3. SWAP       Execute via Uniswap Trading API            │
+  │        ↓        (Permit2, optimal routing, V2/V3/V4)       │
+  │        ↓                                                    │
+  │   4. EARN       Deposit USDC into best-yield protocol      │
+  │        ↓        (Aave V3, Morpho Blue on Base)             │
+  │        ↓                                                    │
+  │   5. MONITOR    Circuit breakers every cycle                │
+  │        ↓        (depeg, TVL crash, gas, rate divergence)    │
+  │        ↓                                                    │
+  │   └── REPEAT ──────────────────────────────────────────┘    │
+  └─────────────────────────────────────────────────────────────┘
 ```
+
+1. **Scans** — Fetches USDC yield rates from Aave V3, Morpho Blue, and Compound V3 on Base, cross-validated across DeFi Llama + on-chain reads
+2. **Thinks** — Claude AI analyzes yield rates, wallet balances, and gas costs, then recommends the optimal action (swap, deposit, or hold)
+3. **Swaps** — Executes token swaps via the Uniswap Trading API with Permit2 flow, optimal routing across V2/V3/V4 pools and UniswapX
+4. **Earns** — Deposits USDC into the highest risk-adjusted yield protocol
+5. **Monitors** — Circuit breakers check for USDC depeg, TVL crashes, gas spikes, and rate divergence every cycle
 
 ## Quick Start
 
@@ -50,14 +55,14 @@ python -m src scan
 # See allocation plan
 python -m src allocate
 
-# Run health check
-python -m src health
+# AI-powered swap recommendation (quote only)
+python -m src swap --ai
 
-# Paper-mode execution
-python -m src execute
+# Full autonomous demo (dry run)
+python demo_swap.py
 
-# Full agent loop
-python -m src run
+# Full autonomous demo (live on-chain)
+python demo_swap.py --live --ai
 ```
 
 ## CLI Commands
@@ -67,14 +72,72 @@ python -m src run
 | `scan` | Live USDC yield rates across protocols |
 | `allocate` | Optimal allocation plan with risk analysis |
 | `execute` | Execute allocation (paper mode by default) |
+| `swap` | Uniswap swap with AI reasoning (`--ai` flag) |
+| `swap --ai --live` | AI-decided live on-chain swap |
 | `run` | Continuous agent loop (scan + allocate + execute) |
 | `health` | System health check (circuit breakers + protocol health) |
 | `dashboard` | Audit trail with P&L summary and yield curve |
 | `portfolio` | Current portfolio state from database |
 | `history` | Execution history log |
 | `emergency-withdraw` | Instant full withdrawal (bypasses cooldowns) |
+| `register` | Register on ERC-8004 Identity Registry |
 
-All commands support `--json-output` for piping.
+## Uniswap Integration
+
+### Trading API
+
+Full integration with the [Uniswap Trading API](https://docs.uniswap.org/api/trading-api/overview) for token swaps on Base:
+
+- **Permit2 flow** — EIP-712 typed data signing with domain validation
+- **Optimal routing** — Automatic best-price routing across V2/V3/V4 pools and UniswapX
+- **Swap target allowlist** — Only known Uniswap contracts accepted (Universal Router, Permit2)
+- **Gas price ceiling** — Prevents overspend on gas spikes
+- **AI-powered decisions** — Claude Haiku analyzes market data and recommends swap direction/amount
+
+### AI Swap Reasoning
+
+The agent uses Claude AI (with rule-based fallback) to decide:
+- **When** to swap (market timing based on yield rates vs ETH appreciation)
+- **What direction** (USDC -> WETH for ETH exposure, WETH -> USDC for yield)
+- **How much** (amount bounded by safety caps — max 50% of any balance per swap)
+
+```
+  Wallet State + Yield Rates + Gas Costs
+                    ↓
+          ┌─────────────────┐
+          │   Claude Haiku  │  (or rule-based fallback)
+          │   AI Reasoning  │
+          └────────┬────────┘
+                   ↓
+    ┌──────────────────────────────┐
+    │  Structured Recommendation   │
+    │  action: swap_weth_to_usdc   │
+    │  amount: $25.00              │
+    │  confidence: 85%             │
+    │  reasoning: "Lock in gains"  │
+    └──────────────────────────────┘
+                   ↓
+         Safety Bounds Check
+         (max 50%, min $1, balance cap)
+                   ↓
+        Execute via Uniswap API
+```
+
+Safety: No private keys pass through the AI. Only public market data is analyzed. AI output is parsed as strict JSON with bounds enforcement.
+
+### On-Chain Transactions (Base Mainnet)
+
+| Action | Tx Hash | Details |
+|---|---|---|
+| USDC -> WETH swap | `0xd368dae5...` | 1 USDC via Uniswap Trading API |
+| Permit2 approval | Included in swap flow | EIP-712 typed data signing |
+| Aave V3 deposit | `0xdd2dcabb...` | 10 USDC supply (block 43440158) |
+
+**Wallet:** `0x8d691720bF8C81044DB1a77b82D0eF5f5bffdE6C`
+
+### ERC-8004 Agent Identity
+
+Registered as **Agent #32272** on the ERC-8004 Identity Registry (Base mainnet). Declared capabilities: yield scanning, risk assessment, portfolio management, safety monitoring.
 
 ## Architecture
 
@@ -89,18 +152,14 @@ Every data point is cross-validated before any capital moves:
 | Utilization | DeFi Llama | On-chain getUtilization |
 | Gas price | On-chain baseFeePerGas | Default fallback |
 | USDC price | CoinGecko | DeFi Llama stablecoins |
-
-**Cross-validation rules:**
-- Rate divergence > 0.5% between sources: warning, use median
-- Rate divergence > 2%: block all actions for that protocol
-- Single source only: log warning, proceed with caution
+| ETH price | CoinGecko | Used for WETH valuation |
 
 ### Strategy Engine
 
 - **Risk scoring** — 5-factor weighted score (TVL 25%, age 20%, audits 20%, utilization 20%, bad debt 15%)
 - **Net APY** — Gross APY minus amortized gas costs over expected hold period
-- **Risk-adjusted yield** — `net_apy * (1 - risk_score)` — protocols are ranked by this
-- **Allocation** — Proportional to risk-adjusted yield, with per-protocol caps and redistribution
+- **Risk-adjusted yield** — `net_apy * (1 - risk_score)` — protocols ranked by this
+- **Allocation** — Proportional to risk-adjusted yield, with per-protocol caps
 
 ### Safety Rails
 
@@ -115,6 +174,7 @@ Every data point is cross-validated before any capital moves:
 | Max APY (sanity cap) | 50% |
 | Withdrawal cooldown | 1 hour |
 | Reserve buffer | 20% kept liquid |
+| Max swap per action | 50% of balance |
 
 **Circuit breakers (run every cycle):**
 
@@ -125,33 +185,18 @@ Every data point is cross-validated before any capital moves:
 | Gas freeze | > 200 gwei | Freeze all moves |
 | Rate divergence | > 2% between sources | Pause protocol |
 
-**Health monitor** — 6 checks per protocol before execution:
-1. Rate cross-validation passed
-2. TVL above minimum
-3. Utilization below cap
-4. APY sanity check
-5. Not frozen by circuit breaker
-6. No critical breaker trips
-
 ### Protocols
 
 | Protocol | Chain | Status |
 |---|---|---|
-| Aave V3 | Base | Active — $103M TVL, 2.5% APY |
-| Morpho Blue (MetaMorpho) | Base | Active — $411M TVL, 3.6% APY |
-| Compound V3 | Base | Monitored — $2.2M TVL (below $50M minimum) |
-
-### Execution Modes
-
-| Mode | Behavior |
-|---|---|
-| **Paper** (default) | Simulates trades, tracks portfolio in SQLite, accrues yield |
-| **Dry run** | Builds real transactions but doesn't sign/send |
-| **Live** | Full on-chain execution via protocol adapters |
+| Aave V3 | Base | Active |
+| Morpho Blue (MetaMorpho) | Base | Active |
+| Compound V3 | Base | Monitored |
+| Uniswap (V2/V3/V4/UniswapX) | Base | Swap routing |
 
 ## Security
 
-**5 security audits completed** — all findings fixed before merge:
+**8 security audits completed** — all findings fixed:
 
 | Audit | Findings | Fixed |
 |---|---|---|
@@ -160,69 +205,62 @@ Every data point is cross-validated before any capital moves:
 | #3 — Execution engine | 3 HIGH + 6 MEDIUM | All |
 | #4 — Circuit breakers | 2 HIGH + 3 MEDIUM | All |
 | #5 — Full codebase | 1 HIGH + 2 MEDIUM | All |
+| #6 — Depeg monitor | 3 findings | All |
+| #7 — Uniswap adapter | 4 HIGH + 6 MEDIUM | All |
+| #8 — AI swap module | Bounds enforcement | Pass |
 
 Key security measures:
-- Private key isolated via `TransactionSigner` — never stored in config
+- Private key isolated via `TransactionSigner` — never stored in config, never sent to AI
 - Chain ID validated at startup + enforced per transaction
-- Dynamic gas estimation with fallback
-- Transaction receipt timeout (120s) prevents infinite hangs
-- ERC-4626 slippage protection on Morpho withdrawals
-- Amount sanity cap ($1B max)
+- Swap target allowlist — only known Uniswap contracts
+- Permit2 domain validation (chain ID + verifying contract)
+- AI output parsed as strict JSON with safety bounds (max 50% swap, amount caps)
+- Gas price ceiling prevents overspend
 - Depeg price validated against [$0.50, $1.50] bounds
-- Spending scope config validated on load
 
 ## Testing
 
 ```bash
-pytest tests/           # 185 tests
+pytest tests/           # 214 tests
 pytest tests/ -v        # Verbose output
-pytest tests/ --tb=short -q  # Quick summary
 ```
 
-**185 tests** covering data layer, protocols, strategy, execution, portfolio, circuit breakers, health monitor, and security.
+**214 tests** covering data layer, protocols, strategy, execution, portfolio, circuit breakers, health monitor, security, Uniswap adapter, and AI swap reasoning.
 
 ## Configuration
 
-All runtime config in `config/default.yaml`:
+All runtime config in `config/default.yaml`. Environment variables (`.env`):
 
-```yaml
-spending_scope:
-  max_total_allocation_pct: 0.80
-  max_per_protocol_pct: 0.40
-  min_protocol_tvl_usd: 50_000_000
-  max_utilization: 0.90
-  max_apy_sanity: 0.50
-
-circuit_breakers:
-  depeg_threshold: 0.005
-  tvl_drop_1h_pct: 0.30
-  gas_freeze_gwei: 200
-```
-
-Environment variables (`.env`):
-- `BASE_RPC_URL` — Base chain RPC endpoint
-- `PRIVATE_KEY` — Wallet private key (live mode only)
-- `BLOCKNATIVE_API_KEY` — Optional gas oracle
+| Variable | Purpose |
+|---|---|
+| `BASE_RPC_URL` | Base chain RPC endpoint |
+| `PRIVATE_KEY` | Wallet private key (live mode only) |
+| `UNISWAP_API_KEY` | Uniswap Trading API key |
+| `ANTHROPIC_API_KEY` | Claude AI for swap reasoning (optional — rule-based fallback) |
 
 ## Tech Stack
 
 - **Python 3.13** — agent logic
 - **web3.py** — on-chain contract reads + transaction execution
-- **aiohttp** — async API calls (DeFi Llama, CoinGecko)
+- **Anthropic SDK** — Claude AI for swap reasoning
+- **Uniswap Trading API** — token swap execution with Permit2
+- **aiohttp** — async API calls (DeFi Llama, CoinGecko, Uniswap)
 - **SQLite** (aiosqlite) — portfolio state, execution log, audit trail
 - **Click** — CLI framework
-- **Circom + snarkjs** — ZK proof generation (privacy layer)
 
 ## Project Structure
 
 ```
 src/
-├── main.py              # CLI entry point (9 commands)
+├── main.py              # CLI entry point (11 commands)
 ├── config.py            # YAML config + spending scope validation
 ├── models.py            # Data models (16 dataclasses/enums)
 ├── database.py          # SQLite persistence
 ├── executor.py          # Paper/dry-run/live execution engine
 ├── portfolio.py         # Position tracking + yield accrual
+├── uniswap.py           # Uniswap Trading API adapter (Permit2, routing)
+├── ai_swap.py           # AI-powered swap reasoning (Claude + fallback)
+├── erc8004.py           # ERC-8004 agent identity registration
 ├── circuit_breakers.py  # Depeg, TVL crash, gas freeze, rate divergence
 ├── health_monitor.py    # Pre-execution health checks (6 per protocol)
 ├── depeg_monitor.py     # Live USDC price fetching + validation
@@ -243,15 +281,42 @@ src/
     ├── risk_scorer.py   # 5-factor protocol risk scoring
     ├── net_apy.py       # Net APY after gas costs
     └── rebalancer.py    # Rebalance trigger engine
+
+demo.py                  # Agent lifecycle demo (scan -> allocate -> execute)
+demo_swap.py             # Autonomous swap + yield demo (AI reasoning)
 ```
+
+## Demos
+
+### `demo.py` — Agent Lifecycle
+Demonstrates the standard yield agent flow: scan rates, health check, allocate, paper execute, dashboard.
+
+### `demo_swap.py` — Autonomous Swap + Yield Loop
+Demonstrates the full AI-powered DeFi agent:
+1. Check wallet balances (USDC + WETH)
+2. AI analyzes yield rates and recommends action
+3. Execute Uniswap swap if recommended
+4. Deposit USDC into highest-yield protocol
+5. Report final state with tx receipts
+
+```bash
+python demo_swap.py              # Dry run
+python demo_swap.py --live       # Live execution
+python demo_swap.py --live --ai  # AI-powered live execution
+```
+
+## Related Projects
+
+- **[synthesis-zk-agent](https://github.com/SenorCodigo69/synthesis-zk-agent)** — ZK privacy layer (Track 2: "Agents that keep secrets") with Uniswap V4 ZK-gated hook
+- **Conversation log:** [`CONVERSATION-LOG.md`](https://github.com/SenorCodigo69/finance_agent/blob/main/docs/hackathon/CONVERSATION-LOG.md)
 
 ## Hackathon Details
 
 - **Event:** Ethereum Foundation Synthesis Hackathon
-- **Track:** "Agents that pay"
+- **Tracks:** "Agents that pay" + Uniswap "Agentic Finance" bounty
 - **Building period:** March 13-22, 2026
 - **Primary AI:** Claude Opus 4.6 via claude-code
-- **Conversation log:** [`docs/hackathon/CONVERSATION-LOG.md`](https://github.com/SenorCodigo69/finance_agent/blob/main/docs/hackathon/CONVERSATION-LOG.md)
+- **On-chain:** Base mainnet (chain ID 8453)
 
 ## License
 

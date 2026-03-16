@@ -928,6 +928,216 @@ async def _register(network: str, rpc_url: str | None):
     click.echo()
 
 
+# ── swap (Uniswap) ──────────────────────────────────────────────────────
+
+@cli.command()
+@click.option("--direction", type=click.Choice(["usdc_to_weth", "weth_to_usdc"]),
+              default=None, help="Swap direction (omit for AI recommendation)")
+@click.option("--amount", default=None, type=float,
+              help="Amount in token units (USDC or WETH)")
+@click.option("--ai", "use_ai", is_flag=True, help="Let AI decide swap direction and amount")
+@click.option("--live", "is_live", is_flag=True, help="Execute on-chain (default: quote only)")
+@click.option("--slippage", default=0.5, type=float, help="Slippage tolerance %% (default: 0.5)")
+def swap(direction: str | None, amount: float | None, use_ai: bool,
+         is_live: bool, slippage: float):
+    """Swap tokens via Uniswap Trading API with optional AI reasoning."""
+    asyncio.run(_swap(direction, amount, use_ai, is_live, slippage))
+
+
+async def _swap(direction: str | None, amount: float | None, use_ai: bool,
+                is_live: bool, slippage: float):
+    import os
+    from web3 import AsyncWeb3
+    from src.uniswap import (
+        UniswapAdapter, USDC_BASE, WETH_BASE, NATIVE_ETH,
+        USDC_DECIMALS, WETH_DECIMALS, SwapResult,
+    )
+    from src.ai_swap import (
+        get_swap_recommendation, SwapAction, SwapRecommendation,
+    )
+
+    config = load_config()
+    rpc_url = config.get("rpc_url", "https://mainnet.base.org")
+    private_key = config.pop("_private_key", None)
+
+    if not private_key:
+        click.echo("  Error: PRIVATE_KEY not set in .env")
+        return
+
+    api_key = os.getenv("UNISWAP_API_KEY", "")
+    if not api_key:
+        click.echo("  Error: UNISWAP_API_KEY not set in .env")
+        return
+
+    w3 = AsyncWeb3(AsyncWeb3.AsyncHTTPProvider(rpc_url))
+    adapter = UniswapAdapter(api_key=api_key, w3=w3)
+
+    from eth_account import Account
+    wallet = Account.from_key(private_key).address
+
+    # Fetch balances
+    usdc_abi = [{"inputs": [{"name": "account", "type": "address"}],
+                 "name": "balanceOf", "outputs": [{"name": "", "type": "uint256"}],
+                 "stateMutability": "view", "type": "function"}]
+    usdc_contract = w3.eth.contract(
+        address=w3.to_checksum_address(USDC_BASE), abi=usdc_abi
+    )
+    weth_contract = w3.eth.contract(
+        address=w3.to_checksum_address(WETH_BASE), abi=usdc_abi
+    )
+    usdc_raw = await usdc_contract.functions.balanceOf(wallet).call()
+    weth_raw = await weth_contract.functions.balanceOf(wallet).call()
+
+    usdc_balance = Decimal(str(usdc_raw)) / Decimal(10 ** USDC_DECIMALS)
+    weth_balance = Decimal(str(weth_raw)) / Decimal(10 ** WETH_DECIMALS)
+
+    # Get ETH price for USD conversion
+    eth_price = Decimal("0")
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                "https://api.coingecko.com/api/v3/simple/price",
+                params={"ids": "ethereum", "vs_currencies": "usd"},
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    eth_price = Decimal(str(data["ethereum"]["usd"]))
+    except Exception:
+        eth_price = Decimal("2000")  # Fallback estimate
+
+    weth_balance_usd = weth_balance * eth_price
+
+    click.echo()
+    click.echo("  Uniswap Swap Agent")
+    click.echo(f"  {'='*55}")
+    click.echo(f"  Wallet:       {wallet}")
+    click.echo(f"  USDC balance: ${usdc_balance:,.6f}")
+    click.echo(f"  WETH balance: {weth_balance:.8f} (${weth_balance_usd:,.2f})")
+    click.echo(f"  ETH price:    ${eth_price:,.2f}")
+    click.echo()
+
+    # AI-powered decision
+    if use_ai or (direction is None and amount is None):
+        click.echo("  Consulting AI for swap recommendation...")
+
+        # Fetch yield rates for context
+        yield_rates = []
+        try:
+            async with aiohttp.ClientSession() as session:
+                rates = await fetch_validated_rates(
+                    http_session=session, rpc_url=rpc_url, chain=Chain.BASE,
+                )
+                yield_rates = [
+                    {
+                        "protocol": r.protocol.value,
+                        "apy": float(r.apy_median),
+                        "tvl": float(r.tvl_usd),
+                        "utilization": float(r.utilization),
+                    }
+                    for r in rates
+                ]
+        except Exception as e:
+            logger.warning(f"Failed to fetch yield rates: {e}")
+
+        gas = await _get_gas(rpc_url)
+
+        rec = await get_swap_recommendation(
+            usdc_balance=usdc_balance,
+            weth_balance_usd=weth_balance_usd,
+            yield_rates=yield_rates,
+            gas_gwei=gas.total_gwei,
+            eth_price=eth_price,
+            anthropic_api_key=os.getenv("ANTHROPIC_API_KEY"),
+        )
+
+        click.echo(f"  AI Decision:  {rec.action.value}")
+        click.echo(f"  Amount:       ${rec.amount_usd:,.2f}")
+        click.echo(f"  Confidence:   {rec.confidence:.0%}")
+        click.echo(f"  Reasoning:    {rec.reasoning}")
+        click.echo()
+
+        if rec.action == SwapAction.HOLD:
+            click.echo("  AI recommends HOLD — no swap needed.")
+            return
+
+        if rec.action == SwapAction.DEPOSIT_YIELD:
+            click.echo("  AI recommends depositing USDC for yield (use 'execute' command).")
+            return
+
+        # Map AI recommendation to swap params
+        if rec.action == SwapAction.SWAP_USDC_TO_WETH:
+            direction = "usdc_to_weth"
+            amount = float(rec.amount_usd)
+        elif rec.action == SwapAction.SWAP_WETH_TO_USDC:
+            direction = "weth_to_usdc"
+            # Convert USD amount to WETH units
+            if eth_price > 0:
+                amount = float(rec.amount_usd / eth_price)
+            else:
+                click.echo("  Error: Cannot convert — ETH price unknown")
+                return
+
+    if not direction or amount is None:
+        click.echo("  Error: Specify --direction and --amount, or use --ai")
+        return
+
+    # Build swap parameters
+    if direction == "usdc_to_weth":
+        token_in = USDC_BASE
+        token_out = WETH_BASE
+        amount_raw = str(int(Decimal(str(amount)) * Decimal(10 ** USDC_DECIMALS)))
+        click.echo(f"  Swap: {amount} USDC -> WETH")
+    else:
+        token_in = WETH_BASE
+        token_out = USDC_BASE
+        amount_raw = str(int(Decimal(str(amount)) * Decimal(10 ** WETH_DECIMALS)))
+        click.echo(f"  Swap: {amount} WETH -> USDC")
+
+    if not is_live:
+        # Quote-only mode
+        click.echo("  Mode: QUOTE ONLY (add --live to execute)")
+        click.echo()
+        try:
+            async with aiohttp.ClientSession() as session:
+                quote = await adapter.get_quote(
+                    session, token_in, token_out, amount_raw, wallet,
+                    slippage=slippage,
+                )
+            if direction == "usdc_to_weth":
+                out_dec = Decimal(quote.amount_out) / Decimal(10 ** WETH_DECIMALS)
+                click.echo(f"  Quote: {amount} USDC -> {out_dec:.8f} WETH")
+            else:
+                out_dec = Decimal(quote.amount_out) / Decimal(10 ** USDC_DECIMALS)
+                click.echo(f"  Quote: {amount} WETH -> {out_dec:.6f} USDC")
+            click.echo(f"  Routing: {quote.routing}")
+        except Exception as e:
+            click.echo(f"  Quote failed: {e}")
+        return
+
+    # Live execution
+    click.echo(f"  Mode: LIVE (slippage: {slippage}%)")
+    click.echo()
+    try:
+        async with aiohttp.ClientSession() as session:
+            result = await adapter.swap(
+                session=session,
+                token_in=token_in,
+                token_out=token_out,
+                amount=amount_raw,
+                private_key=private_key,
+                slippage=slippage,
+            )
+        click.echo(f"  Swap complete!")
+        click.echo(f"  Tx hash:    {result.tx_hash}")
+        click.echo(f"  Block:      {result.block_number}")
+        click.echo(f"  Routing:    {result.routing}")
+        click.echo(f"  Gas used:   {result.gas_used}")
+        click.echo()
+    except Exception as e:
+        click.echo(f"  Swap failed: {e}")
+
+
 # ── run (agent loop) ─────────────────────────────────────────────────────
 
 @cli.command()

@@ -36,6 +36,12 @@ def load_config(config_path: Path | None = None) -> dict:
     if os.getenv("PRIVATE_KEY"):
         config["_private_key"] = os.getenv("PRIVATE_KEY")
 
+    if os.getenv("UNISWAP_API_KEY"):
+        config["uniswap_api_key"] = os.getenv("UNISWAP_API_KEY")
+
+    if os.getenv("ANTHROPIC_API_KEY"):
+        config["anthropic_api_key"] = os.getenv("ANTHROPIC_API_KEY")
+
     if os.getenv("BLOCKNATIVE_API_KEY"):
         config["blocknative_api_key"] = os.getenv("BLOCKNATIVE_API_KEY")
 
