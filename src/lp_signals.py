@@ -1,22 +1,43 @@
 """Quant signals for LP tick range optimization.
 
-Lightweight port of the trading agent's indicators and regime detection,
-using pure Python (no pandas/numpy dependency). Fetches OHLCV data from
-CoinGecko's free API.
+Derives all data from on-chain pool reads (sqrtPriceX96 from slot0).
+No external API dependencies — reads directly from the WETH-USDC pool
+on Base via public RPC.
+
+For historical candles: stores periodic price snapshots in SQLite,
+builds candles from the snapshot history.
 
 Signals computed: ATR, Bollinger Bands, RSI, ADX, EMA, market regime.
 """
 
 import logging
 import math
+import sqlite3
 import time
 from dataclasses import dataclass
-
-import aiohttp
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-COINGECKO_OHLC_URL = "https://api.coingecko.com/api/v3/coins/ethereum/ohlc"
+# ── On-chain constants ────────────────────────────────────────
+
+# WETH-USDC 0.05% pool on Base mainnet
+POOL_ADDRESS = "0xd0b53D9277642d899DF5C87A3966A349A798F224"
+SLOT0_SELECTOR = "0x3850c7bd"
+
+WETH_DECIMALS = 18
+USDC_DECIMALS = 6
+
+# Public Base RPCs (same rotation as dashboard)
+BASE_RPCS = [
+    "https://base.llamarpc.com",
+    "https://1rpc.io/base",
+    "https://base.drpc.org",
+    "https://mainnet.base.org",
+]
+
+# Default snapshot DB path
+DEFAULT_DB_PATH = Path(__file__).parent.parent / "data" / "lp_snapshots.db"
 
 
 # ── Data types ────────────────────────────────────────────────
@@ -49,66 +70,139 @@ class LPSignals:
     timestamp: float
 
 
-# ── OHLCV fetch ───────────────────────────────────────────────
+# ── On-chain price reader ─────────────────────────────────────
 
 
-_MAX_RESPONSE_BYTES = 1_000_000  # 1 MB limit on API response
-_MAX_RETRIES = 2
-_RETRY_DELAY_S = 3
+async def read_pool_price() -> float:
+    """Read current ETH price (USDC per ETH) from the WETH-USDC pool on Base.
 
-
-async def fetch_eth_ohlcv(days: int = 30) -> list[Candle]:
-    """Fetch ETH/USD OHLCV from CoinGecko (free, no key).
-
-    Returns 4h candles for 30 days, 1h for 7 days.
-    Retries up to 2 times on failure with exponential backoff.
+    Reads slot0().sqrtPriceX96 and converts to human-readable price.
+    Tries multiple RPCs with rotation on failure.
     """
-    import asyncio
-    import json
+    import aiohttp
 
-    last_err = None
-    for attempt in range(_MAX_RETRIES + 1):
+    for i, rpc_url in enumerate(BASE_RPCS):
         try:
             async with aiohttp.ClientSession() as session:
-                params = {"vs_currency": "usd", "days": str(days)}
-                async with session.get(COINGECKO_OHLC_URL, params=params, timeout=aiohttp.ClientTimeout(total=10)) as resp:
-                    if resp.status == 429:
-                        raise RuntimeError("CoinGecko rate limited (429)")
-                    if resp.status != 200:
-                        raise RuntimeError(f"CoinGecko OHLC failed: {resp.status}")
-                    raw = await resp.content.read(_MAX_RESPONSE_BYTES)
-                    data = json.loads(raw)
+                payload = {
+                    "jsonrpc": "2.0",
+                    "method": "eth_call",
+                    "params": [{"to": POOL_ADDRESS, "data": SLOT0_SELECTOR}, "latest"],
+                    "id": 1,
+                }
+                async with session.post(
+                    rpc_url,
+                    json=payload,
+                    timeout=aiohttp.ClientTimeout(total=10),
+                ) as resp:
+                    data = await resp.json()
+
+            if "error" in data:
+                raise RuntimeError(data["error"].get("message", str(data["error"])))
+
+            result = data["result"]
+            sqrt_price_x96 = int(result[:66], 16)  # First 32 bytes
+            # price = (sqrtPriceX96 / 2^96)^2 * 10^(token0_decimals - token1_decimals)
+            # For WETH(18)/USDC(6): price_usdc_per_eth = (sqrtP/2^96)^2 * 10^12
+            sqrt_p = sqrt_price_x96 / (2**96)
+            price = sqrt_p * sqrt_p * (10 ** (WETH_DECIMALS - USDC_DECIMALS))
+
+            if price <= 0 or not math.isfinite(price):
+                raise RuntimeError(f"Invalid price from pool: {price}")
+
+            return price
+
         except Exception as e:
-            last_err = e
-            if attempt < _MAX_RETRIES:
-                logger.warning("CoinGecko attempt %d failed: %s, retrying in %ds", attempt + 1, e, _RETRY_DELAY_S * (attempt + 1))
-                await asyncio.sleep(_RETRY_DELAY_S * (attempt + 1))
-                continue
-            raise RuntimeError(f"CoinGecko failed after {_MAX_RETRIES + 1} attempts: {last_err}") from last_err
-
-        # Validate response shape
-        if not isinstance(data, list):
-            raise RuntimeError(f"CoinGecko returned unexpected format: {type(data).__name__}")
-
-        candles = []
-        for i, row in enumerate(data):
-            if not isinstance(row, (list, tuple)) or len(row) < 5:
-                logger.warning("Skipping malformed OHLC row %d: %s", i, row)
-                continue
-            try:
-                candles.append(Candle(
-                    timestamp=float(row[0]) / 1000,
-                    open=float(row[1]),
-                    high=float(row[2]),
-                    low=float(row[3]),
-                    close=float(row[4]),
-                ))
-            except (TypeError, ValueError) as e:
-                logger.warning("Skipping invalid OHLC row %d: %s", i, e)
-                continue
-        return candles
+            logger.warning("RPC %s failed: %s", rpc_url, e)
+            if i == len(BASE_RPCS) - 1:
+                raise RuntimeError(f"All {len(BASE_RPCS)} RPCs failed reading pool price") from e
+            continue
 
     raise RuntimeError("Unreachable")
+
+
+# ── Snapshot DB ───────────────────────────────────────────────
+
+_SCHEMA = """
+CREATE TABLE IF NOT EXISTS price_snapshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp REAL NOT NULL,
+    price REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_snapshots_ts ON price_snapshots(timestamp);
+"""
+
+
+def _get_db(db_path: Path | None = None) -> sqlite3.Connection:
+    path = db_path or DEFAULT_DB_PATH
+    path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(path))
+    conn.executescript(_SCHEMA)
+    return conn
+
+
+def store_snapshot(price: float, ts: float | None = None, db_path: Path | None = None) -> None:
+    """Store a price snapshot."""
+    conn = _get_db(db_path)
+    conn.execute("INSERT INTO price_snapshots (timestamp, price) VALUES (?, ?)", (ts or time.time(), price))
+    conn.commit()
+    conn.close()
+
+
+def get_snapshots(hours: int = 168, db_path: Path | None = None) -> list[tuple[float, float]]:
+    """Get price snapshots from the last N hours. Returns [(timestamp, price), ...]."""
+    conn = _get_db(db_path)
+    cutoff = time.time() - hours * 3600
+    rows = conn.execute(
+        "SELECT timestamp, price FROM price_snapshots WHERE timestamp > ? ORDER BY timestamp ASC",
+        (cutoff,),
+    ).fetchall()
+    conn.close()
+    return rows
+
+
+def snapshots_to_candles(snapshots: list[tuple[float, float]], interval_s: int = 3600) -> list[Candle]:
+    """Aggregate price snapshots into OHLC candles.
+
+    Args:
+        snapshots: [(timestamp, price), ...] sorted by timestamp.
+        interval_s: Candle interval in seconds (default 1 hour).
+    """
+    if not snapshots:
+        return []
+
+    candles = []
+    bucket_start = (snapshots[0][0] // interval_s) * interval_s
+    bucket_prices: list[float] = []
+
+    for ts, price in snapshots:
+        if ts >= bucket_start + interval_s:
+            # Close current candle
+            if bucket_prices:
+                candles.append(Candle(
+                    timestamp=bucket_start,
+                    open=bucket_prices[0],
+                    high=max(bucket_prices),
+                    low=min(bucket_prices),
+                    close=bucket_prices[-1],
+                ))
+            # Advance to the correct bucket
+            bucket_start = (ts // interval_s) * interval_s
+            bucket_prices = []
+
+        bucket_prices.append(price)
+
+    # Final candle
+    if bucket_prices:
+        candles.append(Candle(
+            timestamp=bucket_start,
+            open=bucket_prices[0],
+            high=max(bucket_prices),
+            low=min(bucket_prices),
+            close=bucket_prices[-1],
+        ))
+
+    return candles
 
 
 # ── Pure Python indicators ────────────────────────────────────
@@ -240,7 +334,7 @@ def detect_regime(candles: list[Candle]) -> tuple[str, float, str]:
     """Detect market regime from OHLCV candles.
 
     Ported from finance_agent/src/regime.py — simplified weighted-vote system.
-    Omits HMM/Hurst (too heavy for yield agent).
+    Requires at least 60 candles for meaningful signals.
 
     Returns: (regime, confidence, trend_direction)
     """
@@ -333,13 +427,43 @@ def detect_regime(candles: list[Candle]) -> tuple[str, float, str]:
 # ── Bundle all signals ────────────────────────────────────────
 
 
-async def compute_signals(days: int = 30) -> LPSignals:
-    """Fetch OHLCV and compute all LP signals."""
-    candles = await fetch_eth_ohlcv(days)
-    if not candles:
-        raise RuntimeError("No OHLCV data returned")
+async def compute_signals(db_path: Path | None = None, candle_interval_s: int = 3600) -> LPSignals:
+    """Read pool price on-chain, store snapshot, build candles from history, compute signals.
 
-    current_price = candles[-1].close
+    This is fully on-chain — no external API. Requires accumulated snapshots
+    in the DB for meaningful indicator values (60+ candles = 60+ hours of snapshots).
+
+    If insufficient history, returns signals with current price but zero/default
+    indicator values (regime=sideways, confidence=0).
+    """
+    # 1. Read current price from pool
+    current_price = await read_pool_price()
+
+    # 2. Store snapshot
+    store_snapshot(current_price, db_path=db_path)
+
+    # 3. Build candles from snapshot history
+    snapshots = get_snapshots(hours=168, db_path=db_path)  # 7 days
+    candles = snapshots_to_candles(snapshots, interval_s=candle_interval_s)
+
+    # 4. Compute signals (graceful degradation if insufficient history)
+    if len(candles) < 15:
+        logger.info("Only %d candles available (need 60+ for full signals), using defaults", len(candles))
+        return LPSignals(
+            current_price=current_price,
+            atr=0,
+            atr_pct=0,
+            bb_upper=current_price,
+            bb_lower=current_price,
+            bb_width_pct=0,
+            rsi=50,
+            adx=0,
+            regime="sideways",
+            regime_confidence=0,
+            trend_direction="flat",
+            timestamp=time.time(),
+        )
+
     atr_val = compute_atr(candles)
     bb_upper, bb_mid, bb_lower = compute_bollinger(candles)
     rsi_val = compute_rsi(candles)

@@ -23,6 +23,9 @@ from src.lp_signals import (
     _ema,
     _sma,
     LPSignals,
+    store_snapshot,
+    get_snapshots,
+    snapshots_to_candles,
 )
 from src.lp_optimizer import compute_range, MIN_WIDTH_PCT, MAX_WIDTH_PCT
 from src.lp_il_tracker import compute_concentrated_il, compute_il_report
@@ -184,6 +187,58 @@ class TestIndicators:
         regime, conf, trend = detect_regime(candles)
         assert regime == "sideways"
         assert conf == 0.0
+
+
+# ── Snapshot DB + Candle Builder ──────────────────────────────
+
+
+class TestSnapshots:
+    def test_store_and_retrieve(self, tmp_path):
+        db = tmp_path / "test.db"
+        store_snapshot(2500.0, ts=time.time(), db_path=db)
+        store_snapshot(2510.0, ts=time.time(), db_path=db)
+        rows = get_snapshots(hours=1, db_path=db)
+        assert len(rows) == 2
+        assert rows[0][1] == 2500.0
+        assert rows[1][1] == 2510.0
+
+    def test_snapshots_filtered_by_hours(self, tmp_path):
+        db = tmp_path / "test.db"
+        old_ts = time.time() - 86400 * 10  # 10 days ago
+        store_snapshot(2000.0, ts=old_ts, db_path=db)
+        store_snapshot(2500.0, ts=time.time(), db_path=db)
+        rows = get_snapshots(hours=24, db_path=db)  # Last 24h only
+        assert len(rows) == 1
+        assert rows[0][1] == 2500.0
+
+    def test_snapshots_to_candles_basic(self):
+        # Align to bucket boundary (multiple of 3600)
+        base = 3600 * 1000  # Clean bucket start
+        snapshots = [
+            (base + 100, 100),
+            (base + 1000, 105),
+            (base + 2000, 102),
+            (base + 3600, 110),  # New candle (next bucket)
+            (base + 4000, 108),
+        ]
+        candles = snapshots_to_candles(snapshots, interval_s=3600)
+        assert len(candles) == 2
+        # First candle: 100, 105, 102
+        assert candles[0].open == 100
+        assert candles[0].high == 105
+        assert candles[0].low == 100
+        assert candles[0].close == 102
+
+    def test_snapshots_to_candles_empty(self):
+        assert snapshots_to_candles([]) == []
+
+    def test_snapshots_to_candles_single(self):
+        candles = snapshots_to_candles([(1000000, 2500)], interval_s=3600)
+        assert len(candles) == 1
+        assert candles[0].open == 2500
+        assert candles[0].close == 2500
+        assert candles[0].high == 2500
+        assert candles[0].low == 2500
 
 
 # ── Optimizer ─────────────────────────────────────────────────
