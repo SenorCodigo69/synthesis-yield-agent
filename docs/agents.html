@@ -316,25 +316,25 @@
 
     <div class="hero">
       <h1>Agent <span>Fleet</span></h1>
-      <p class="tagline">Two autonomous agents, one chain, one pipeline</p>
+      <p class="tagline">Three autonomous agents, two chains, one pipeline</p>
     </div>
 
     <!-- Summary -->
     <div class="summary">
       <div class="summary-stat">
-        <div class="val">2</div>
+        <div class="val">3</div>
         <div class="lbl">Agents</div>
       </div>
       <div class="summary-stat">
-        <div class="val">353</div>
+        <div class="val">380</div>
         <div class="lbl">Tests Passing</div>
       </div>
       <div class="summary-stat">
-        <div class="val">12</div>
+        <div class="val">14</div>
         <div class="lbl">Security Audits</div>
       </div>
       <div class="summary-stat">
-        <div class="val">5</div>
+        <div class="val">6</div>
         <div class="lbl">Contracts Deployed</div>
       </div>
       <div class="summary-stat">
@@ -342,8 +342,8 @@
         <div class="lbl">ERC-8004 IDs</div>
       </div>
       <div class="summary-stat">
-        <div class="val">Base</div>
-        <div class="lbl">Chain</div>
+        <div class="val">Base + ETH</div>
+        <div class="lbl">Chains</div>
       </div>
     </div>
 
@@ -501,6 +501,83 @@
         </div>
       </div>
 
+      <!-- stETH Treasury Agent -->
+      <div class="agent-card">
+        <div class="agent-header">
+          <div>
+            <div class="agent-name">stETH Treasury Agent</div>
+            <div class="agent-desc">Yield-bearing operating budget backed by Lido staked ETH. Agent can only withdraw accrued staking yield — principal is structurally inaccessible at the contract level.</div>
+          </div>
+          <span class="status-badge status-live">Live</span>
+        </div>
+        <div class="agent-body">
+          <div class="agent-grid">
+            <div class="agent-field">
+              <div class="label">Chain</div>
+              <div class="value">Ethereum Mainnet</div>
+            </div>
+            <div class="agent-field">
+              <div class="label">Tests</div>
+              <div class="value">27 passing (Foundry)</div>
+            </div>
+            <div class="agent-field">
+              <div class="label">Principal</div>
+              <div class="value">0.0065 stETH</div>
+            </div>
+            <div class="agent-field">
+              <div class="label">Yield Rate</div>
+              <div class="value">~3.5% APR (Lido)</div>
+            </div>
+            <div class="agent-field">
+              <div class="label">Per-Tx Cap</div>
+              <div class="value">0.1 stETH</div>
+            </div>
+            <div class="agent-field">
+              <div class="label">Cooldown</div>
+              <div class="value">1 hour</div>
+            </div>
+          </div>
+          <div class="contracts">
+            <div class="contracts-title">Deployed Contract (Ethereum)</div>
+            <div class="contract-row">
+              <span class="contract-name">AgentTreasury</span>
+              <a class="contract-addr" href="https://etherscan.io/address/0x049B09c4aE1974F84164b65a9f0AB412dA9814f2" target="_blank">0x049B...14f2</a>
+            </div>
+            <div class="contract-row">
+              <span class="contract-name">Deposit (0.008 ETH &rarr; Lido)</span>
+              <a class="contract-addr" href="https://etherscan.io/tx/0xbea50de54a3ee044cbf187189e83cc08c0829dcf3dbd4fa6fd2aaa3c7b9578c7" target="_blank">0xbea5...78c7</a>
+            </div>
+            <div class="contract-row">
+              <span class="contract-name">Wallet</span>
+              <a class="contract-addr" href="https://etherscan.io/address/0x8d691720bF8C81044DB1a77b82D0eF5f5bffdE6C" target="_blank">0x8d69...dE6C</a>
+            </div>
+          </div>
+          <div style="margin-top:16px;padding:12px 16px;background:rgba(0,184,148,0.05);border:1px solid rgba(0,184,148,0.15);border-radius:4px;">
+            <div style="font-size:0.8rem;color:var(--muted);line-height:1.8;">
+              <strong style="color:var(--green);">Safety:</strong>
+              Principal protected by on-chain invariant &bull;
+              Recipient whitelist enforced &bull;
+              Per-tx cap + cooldown &bull;
+              Owner can exit at any time &bull;
+              Verified on Sourcify + Blockscout
+            </div>
+          </div>
+          <div class="tags">
+            <span class="tag chain">Ethereum</span>
+            <span class="tag">Lido stETH</span>
+            <span class="tag">wstETH</span>
+            <span class="tag">Yield-Bearing Budget</span>
+            <span class="tag">Principal Protection</span>
+            <span class="tag">Foundry</span>
+          </div>
+          <div class="agent-links">
+            <a href="https://github.com/SenorCodigo69/synthesis-steth-treasury" target="_blank">GitHub</a>
+            <a href="https://etherscan.io/address/0x049B09c4aE1974F84164b65a9f0AB412dA9814f2" target="_blank">Etherscan</a>
+            <a href="https://eth.blockscout.com/address/0x049B09c4aE1974F84164b65a9f0AB412dA9814f2" target="_blank">Blockscout (Verified)</a>
+          </div>
+        </div>
+      </div>
+
     </div>
 
     <!-- ZK Transparency Note -->
@@ -556,6 +633,10 @@
         <span style="color:var(--muted);">&rarr;</span>
         <span style="color:var(--green);font-weight:700;"> Deposit &amp; Earn</span>
         <span style="color:var(--muted);"> (Aave / LP)</span>
+        <br>
+        <span style="color:var(--muted);">&rarr;</span>
+        <span style="color:var(--orange);font-weight:700;"> stETH Treasury</span>
+        <span style="color:var(--muted);"> funds agent budget via Lido staking yield (Ethereum) </span>
       </div>
     </section>
 

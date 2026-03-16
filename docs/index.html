@@ -341,6 +341,14 @@
           <span class="flow">hookData</span>
         </div>
         <div class="layer">
+          <div class="layer-label">Treasury Layer (Ethereum Mainnet)</div>
+          <span class="flow">Lido stETH</span>
+          <span class="arrow">&rarr;</span>
+          yield-bearing agent budget
+          <span class="arrow">&rarr;</span>
+          <span class="flow">agent withdraws only yield</span>
+        </div>
+        <div class="layer">
           <div class="layer-label">Execution Layer (Base Mainnet)</div>
           <span class="flow">Uniswap V4 Hook</span>
           <span class="arrow">&rarr;</span>
@@ -414,15 +422,15 @@
       <h2>Live on Base Mainnet</h2>
       <div class="stats">
         <div class="stat">
-          <div class="stat-value">5</div>
-          <div class="stat-label">Smart Contracts Deployed</div>
+          <div class="stat-value">6</div>
+          <div class="stat-label">Contracts (Base + Ethereum)</div>
         </div>
         <div class="stat">
           <div class="stat-value">2</div>
           <div class="stat-label">ERC-8004 Agent IDs</div>
         </div>
         <div class="stat">
-          <div class="stat-value">281+</div>
+          <div class="stat-value">380</div>
           <div class="stat-label">Tests Passing</div>
         </div>
         <div class="stat">
@@ -459,6 +467,8 @@
           <tr><td>ERC-8004 ZK Agent</td><td class="addr">#32271</td></tr>
           <tr><td>ERC-8004 Yield Agent</td><td class="addr">#32272</td></tr>
           <tr><td>LP Position (WETH-USDC)</td><td class="addr">#4816034 (0.05% fee, full range)</td></tr>
+          <tr><td colspan="2" style="color:var(--muted);font-size:0.7rem;text-transform:uppercase;letter-spacing:0.5px;padding-top:16px;">Ethereum Mainnet</td></tr>
+          <tr><td>AgentTreasury (Lido stETH)</td><td class="addr"><a href="https://etherscan.io/address/0x049B09c4aE1974F84164b65a9f0AB412dA9814f2" target="_blank">0x049B09c4aE1974F84164b65a9f0AB412dA9814f2</a></td></tr>
         </tbody>
       </table>
     </section>
@@ -525,9 +535,13 @@
           <h3>ZKGatedHook on BaseScan</h3>
           <p>First ZK access-control hook on Uniswap V4. Verifies Groth16 proofs in beforeSwap callback.</p>
         </a>
-        <a href="https://basescan.org/tx/0x83c7071962e5a2267ad95fa0afad585720f221516bf56e00abde81c45341793a" class="link-card">
-          <h3>LP Mint Transaction</h3>
-          <p>Live WETH-USDC full-range LP position minted by the agent on Base mainnet.</p>
+        <a href="https://github.com/SenorCodigo69/synthesis-steth-treasury" class="link-card">
+          <h3>stETH Treasury</h3>
+          <p>Yield-bearing agent budget on Ethereum mainnet. Lido staking, principal protection, whitelist + caps. 27 Foundry tests.</p>
+        </a>
+        <a href="https://etherscan.io/address/0x049B09c4aE1974F84164b65a9f0AB412dA9814f2" class="link-card">
+          <h3>AgentTreasury on Etherscan</h3>
+          <p>Live stETH treasury contract on Ethereum mainnet — 0.0065 stETH staked, earning ~3.5% APR via Lido.</p>
         </a>
       </div>
     </section>
@@ -547,7 +561,8 @@
           <tr><td>Track 3</td><td>Uniswap — Agentic Finance</td></tr>
           <tr><td>Track 4</td><td>Let the Agent Cook</td></tr>
           <tr><td>Conversation Log</td><td><a href="https://github.com/SenorCodigo69/synthesis-yield-agent/blob/main/CONVERSATION-LOG.md" target="_blank">CONVERSATION-LOG.md</a></td></tr>
-          <tr><td>Open Source</td><td><a href="https://github.com/SenorCodigo69/synthesis-yield-agent" target="_blank">Yield Agent</a> &bull; <a href="https://github.com/SenorCodigo69/synthesis-zk-agent" target="_blank">ZK Agent</a></td></tr>
+          <tr><td>Track 5</td><td>Lido — stETH Agent Treasury</td></tr>
+          <tr><td>Open Source</td><td><a href="https://github.com/SenorCodigo69/synthesis-yield-agent" target="_blank">Yield Agent</a> &bull; <a href="https://github.com/SenorCodigo69/synthesis-zk-agent" target="_blank">ZK Agent</a> &bull; <a href="https://github.com/SenorCodigo69/synthesis-steth-treasury" target="_blank">stETH Treasury</a></td></tr>
         </tbody>
       </table>
     </section>
@@ -556,7 +571,7 @@
     <footer>
       <p class="hackathon">EF Synthesis Hackathon 2026</p>
       <p>Built with Claude Code (claude-opus-4-6) across 45 sessions</p>
-      <p style="margin-top: 8px;">Tracks: "Agents that pay" + "Agents that keep secrets" + Uniswap "Agentic Finance" + "Let the Agent Cook"</p>
+      <p style="margin-top: 8px;">Tracks: "Agents that pay" + "Agents that keep secrets" + Uniswap "Agentic Finance" + "Let the Agent Cook" + Lido "stETH Agent Treasury"</p>
     </footer>
 
   </div>

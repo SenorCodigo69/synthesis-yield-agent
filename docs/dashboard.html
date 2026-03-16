@@ -344,6 +344,59 @@
       </div>
     </div>
 
+    <!-- stETH Treasury (Ethereum Mainnet) -->
+    <div class="section">
+      <h2>stETH Treasury <span style="font-size:0.7rem;color:var(--muted);font-weight:400;">(Ethereum Mainnet)</span></h2>
+      <div class="position-card">
+        <div class="position-header">
+          <span class="position-title">AgentTreasury <span style="color:var(--muted);font-weight:400;">Lido stETH</span></span>
+          <span class="position-badge" id="treasury-status">Loading...</span>
+        </div>
+        <div class="position-grid">
+          <div class="position-field">
+            <div class="label">Contract</div>
+            <div class="value"><a href="https://etherscan.io/address/0x049B09c4aE1974F84164b65a9f0AB412dA9814f2" target="_blank" style="font-size:0.75rem;">0x049B...14f2</a></div>
+          </div>
+          <div class="position-field">
+            <div class="label">Principal</div>
+            <div class="value" id="treasury-principal">--</div>
+          </div>
+          <div class="position-field">
+            <div class="label">Current Value</div>
+            <div class="value neutral" id="treasury-current">--</div>
+          </div>
+          <div class="position-field">
+            <div class="label">Available Yield</div>
+            <div class="value positive" id="treasury-yield">--</div>
+          </div>
+          <div class="position-field">
+            <div class="label">wstETH Held</div>
+            <div class="value" id="treasury-wsteth">--</div>
+          </div>
+          <div class="position-field">
+            <div class="label">Yield Rate</div>
+            <div class="value">~3.5% APR</div>
+          </div>
+          <div class="position-field">
+            <div class="label">Per-Tx Cap</div>
+            <div class="value" id="treasury-cap">--</div>
+          </div>
+          <div class="position-field">
+            <div class="label">Cooldown</div>
+            <div class="value" id="treasury-cooldown">--</div>
+          </div>
+          <div class="position-field">
+            <div class="label">Total Yield Withdrawn</div>
+            <div class="value" id="treasury-withdrawn">--</div>
+          </div>
+          <div class="position-field">
+            <div class="label">Deposit Tx</div>
+            <div class="value"><a href="https://etherscan.io/tx/0xbea50de54a3ee044cbf187189e83cc08c0829dcf3dbd4fa6fd2aaa3c7b9578c7" target="_blank" style="font-size:0.75rem;">View on Etherscan</a></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Token Balances -->
     <div class="section">
       <h2>Token Balances</h2>
@@ -467,7 +520,7 @@
 
     <footer>
       <p>Wallet: <a href="https://basescan.org/address/0x8d691720bF8C81044DB1a77b82D0eF5f5bffdE6C" target="_blank">0x8d691720bF8C81044DB1a77b82D0eF5f5bffdE6C</a></p>
-      <p style="margin-top:4px;">Chain: Base (8453) | <a href="index.html">Landing Page</a> | <a href="https://github.com/SenorCodigo69/synthesis-yield-agent" target="_blank">GitHub</a> | <a href="https://github.com/SenorCodigo69/synthesis-zk-agent" target="_blank">ZK Agent</a></p>
+      <p style="margin-top:4px;">Chains: Base (8453) + Ethereum (1) | <a href="index.html">Landing Page</a> | <a href="https://github.com/SenorCodigo69/synthesis-yield-agent" target="_blank">Yield Agent</a> | <a href="https://github.com/SenorCodigo69/synthesis-zk-agent" target="_blank">ZK Agent</a> | <a href="https://github.com/SenorCodigo69/synthesis-steth-treasury" target="_blank">stETH Treasury</a></p>
     </footer>
 
   </div>
@@ -774,11 +827,78 @@
       if (countdown <= 0) {
         countdown = REFRESH_INTERVAL;
         refresh();
+        refreshTreasury();
+      }
+    }
+
+    // ── Ethereum Mainnet Treasury ─────────────────────────────
+    const ETH_RPCS = [
+      "https://ethereum-rpc.publicnode.com",
+      "https://eth.drpc.org",
+      "https://rpc.payload.de",
+    ];
+    let ethRpcIndex = 0;
+    const TREASURY = "0x049B09c4aE1974F84164b65a9f0AB412dA9814f2";
+
+    async function ethRpcCall(method, params) {
+      for (let attempt = 0; attempt < ETH_RPCS.length; attempt++) {
+        const url = ETH_RPCS[(ethRpcIndex + attempt) % ETH_RPCS.length];
+        try {
+          const res = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ jsonrpc: "2.0", method, params, id: rpcId++ }),
+          });
+          const data = await res.json();
+          if (data.error) throw new Error(data.error.message);
+          return data.result;
+        } catch (err) {
+          ethRpcIndex++;
+          if (attempt === ETH_RPCS.length - 1) throw err;
+        }
+      }
+    }
+
+    async function refreshTreasury() {
+      try {
+        const calls = [
+          ethRpcCall("eth_call", [{ to: TREASURY, data: "0x9e5056c4" }, "latest"]), // principalStETH()
+          ethRpcCall("eth_call", [{ to: TREASURY, data: "0x1ae6a7dc" }, "latest"]), // currentValueStETH()
+          ethRpcCall("eth_call", [{ to: TREASURY, data: "0x175e439c" }, "latest"]), // availableYield()
+          ethRpcCall("eth_call", [{ to: TREASURY, data: "0xb756239d" }, "latest"]), // wstETHBalance()
+          ethRpcCall("eth_call", [{ to: TREASURY, data: "0xad82cbea" }, "latest"]), // perTxCap()
+          ethRpcCall("eth_call", [{ to: TREASURY, data: "0xd2f343c7" }, "latest"]), // timeWindow()
+          ethRpcCall("eth_call", [{ to: TREASURY, data: "0xd5511ee7" }, "latest"]), // totalYieldWithdrawn()
+        ];
+
+        const results = await Promise.all(calls);
+        const toEth = (hex) => (Number(BigInt(hex)) / 1e18).toFixed(6);
+        const toSec = (hex) => Number(BigInt(hex));
+
+        document.getElementById("treasury-principal").textContent = toEth(results[0]) + " stETH";
+        document.getElementById("treasury-current").textContent = toEth(results[1]) + " stETH";
+        document.getElementById("treasury-yield").textContent = toEth(results[2]) + " stETH";
+        document.getElementById("treasury-wsteth").textContent = toEth(results[3]) + " wstETH";
+        document.getElementById("treasury-cap").textContent = toEth(results[4]) + " stETH";
+        const windowSec = toSec(results[5]);
+        document.getElementById("treasury-cooldown").textContent = (windowSec / 3600) + "h";
+        document.getElementById("treasury-withdrawn").textContent = toEth(results[6]) + " stETH";
+        document.getElementById("treasury-status").textContent = "Active";
+        document.getElementById("treasury-status").style.background = "rgba(0,184,148,0.15)";
+        document.getElementById("treasury-status").style.color = "var(--green)";
+
+        addLog(`Treasury: ${toEth(results[0])} stETH principal, ${toEth(results[2])} yield available`);
+      } catch (err) {
+        document.getElementById("treasury-status").textContent = "Error";
+        document.getElementById("treasury-status").style.background = "rgba(214,48,49,0.15)";
+        document.getElementById("treasury-status").style.color = "var(--red)";
+        addLog(`Treasury error: ${err.message}`);
       }
     }
 
     // Initial load
     refresh();
+    refreshTreasury();
     setInterval(tick, 1000);
   </script>
 </body>
