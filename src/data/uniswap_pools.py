@@ -10,6 +10,7 @@ Level 2 (future): Actual LP position management via NonfungiblePositionManager.
 """
 
 import logging
+import math
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -66,13 +67,23 @@ async def _fetch_defillama_pools(
 def _parse_pool(raw: dict) -> UniswapPool | None:
     """Parse a raw DeFi Llama pool into a UniswapPool."""
     try:
-        tvl = Decimal(str(raw.get("tvlUsd", 0)))
+        # S44-M1: Validate numeric fields are finite before Decimal conversion
+        raw_tvl = float(raw.get("tvlUsd", 0) or 0)
+        raw_apy_base = float(raw.get("apyBase", 0) or 0)
+        raw_apy_reward = float(raw.get("apyReward", 0) or 0)
+        raw_apy_total = float(raw.get("apy", 0) or 0)
+
+        if not all(math.isfinite(v) for v in (raw_tvl, raw_apy_base, raw_apy_reward, raw_apy_total)):
+            logger.warning("Non-finite value in pool data: tvl=%s apy=%s", raw_tvl, raw_apy_total)
+            return None
+
+        tvl = Decimal(str(raw_tvl))
         if tvl < MIN_POOL_TVL:
             return None
 
-        apy_base = Decimal(str(raw.get("apyBase", 0) or 0)) / Decimal("100")
-        apy_reward = Decimal(str(raw.get("apyReward", 0) or 0)) / Decimal("100")
-        apy_total = Decimal(str(raw.get("apy", 0) or 0)) / Decimal("100")
+        apy_base = Decimal(str(raw_apy_base)) / Decimal("100")
+        apy_reward = Decimal(str(raw_apy_reward)) / Decimal("100")
+        apy_total = Decimal(str(raw_apy_total)) / Decimal("100")
 
         # Sanity cap
         if apy_total > MAX_APY_SANITY:

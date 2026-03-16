@@ -1202,11 +1202,15 @@ async def _swap(direction: str | None, amount: float | None, use_ai: bool,
             # Compute spend amount (at least 1 for circuit validity)
             spend_usdc = max(int(amount_dec), 1) if amount_dec > 0 else 1
 
-            # Call ZK agent via subprocess to avoid src package collision
+            # S44-M3: Call ZK agent via subprocess with env vars (not f-string code)
             zk_python = os.path.join(zk_agent_dir, ".venv", "bin", "python")
-            zk_script = f"""
-import json, os, secrets, sys
-sys.path.insert(0, "{zk_agent_dir}")
+            zk_script = """
+import json, os, sys
+
+zk_dir = os.environ["ZK_AGENT_DIR"]
+spend = int(os.environ["ZK_SPEND_AMOUNT"])
+
+sys.path.insert(0, zk_dir)
 from src.config import load_config
 from src.zk.prover import ZKProver
 from src.zk.keys import generate_keys
@@ -1229,9 +1233,9 @@ delegation = create_delegation(
 state = initialize_policy_state(delegation, config["spending_policy"]["period_limit"])
 
 policy_mgr = PolicyManager(prover, config)
-compliance = policy_mgr.full_compliance_check({spend_usdc}, state)
+compliance = policy_mgr.full_compliance_check(spend, state)
 
-result = {{"compliant": compliance["compliant"], "reason": compliance.get("reason")}}
+result = {"compliant": compliance["compliant"], "reason": compliance.get("reason")}
 
 if compliance["compliant"]:
     auth_proof = compliance["auth"]["proof"]
@@ -1243,10 +1247,11 @@ if compliance["compliant"]:
 
 print(json.dumps(result))
 """
+            env = {**os.environ, "ZK_AGENT_DIR": zk_agent_dir, "ZK_SPEND_AMOUNT": str(spend_usdc)}
             proc = _sp.run(
                 [zk_python, "-c", zk_script],
                 capture_output=True, text=True, timeout=60,
-                cwd=zk_agent_dir,
+                cwd=zk_agent_dir, env=env,
             )
 
             if proc.returncode != 0:

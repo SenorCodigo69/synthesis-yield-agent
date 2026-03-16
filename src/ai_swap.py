@@ -290,4 +290,6 @@ def _best_apy(rates: list[dict]) -> Decimal:
     """Extract the best APY from yield rates."""
     if not rates:
         return Decimal("0")
-    return max(Decimal(str(r.get("apy", 0))) for r in rates)
+    # S44-L1: Filter non-finite values to prevent NaN propagation
+    valid = [Decimal(str(r.get("apy", 0))) for r in rates if isinstance(r.get("apy"), (int, float)) and r.get("apy") == r.get("apy")]  # NaN != NaN
+    return max(valid) if valid else Decimal("0")
