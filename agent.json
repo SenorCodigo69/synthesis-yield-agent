@@ -69,6 +69,15 @@
       "name": "sqlite_database",
       "type": "persistence",
       "description": "Local SQLite for execution history, portfolio state, audit trail"
+    },
+    {
+      "name": "lido_steth_treasury",
+      "type": "defi_protocol",
+      "description": "stETH Agent Treasury on Ethereum mainnet — yield-bearing operating budget backed by Lido staking. Agent can only withdraw accrued yield, never principal.",
+      "chain": "ethereum",
+      "contract": "0x049B09c4aE1974F84164b65a9f0AB412dA9814f2",
+      "capabilities": ["yield_monitoring", "yield_withdrawal", "treasury_reporting"],
+      "companion_repo": "https://github.com/SenorCodigo69/synthesis-steth-treasury"
     }
   ],
   "tech_stacks": ["python", "asyncio", "web3", "aiohttp", "sqlite", "click"],
@@ -138,8 +147,9 @@
     ]
   },
   "on_chain_artifacts": {
-    "chain": "base",
-    "chain_id": 8453,
+    "chains": ["base", "ethereum"],
+    "primary_chain": "base",
+    "primary_chain_id": 8453,
     "lp_positions": [
       {
         "token_id": 4816034,
@@ -156,6 +166,11 @@
       "AaveV3Pool": "0xA238Dd80C259a72e81d7e4664a9801593F98d1c5",
       "USDC": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
       "WETH": "0x4200000000000000000000000000000000000006"
+    },
+    "ethereum_contracts": {
+      "AgentTreasury": "0x049B09c4aE1974F84164b65a9f0AB412dA9814f2",
+      "stETH": "0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84",
+      "wstETH": "0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0"
     }
   }
 }

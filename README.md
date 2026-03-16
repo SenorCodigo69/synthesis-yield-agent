@@ -195,6 +195,7 @@ Every data point is cross-validated before any capital moves:
 | Morpho Blue (MetaMorpho) | Base | Active |
 | Compound V3 | Base | Monitored |
 | Uniswap (V2/V3/V4/UniswapX) | Base | Swap routing |
+| Lido stETH Treasury | Ethereum | Active — [companion repo](https://github.com/SenorCodigo69/synthesis-steth-treasury) |
 
 ## Security
 
@@ -309,13 +310,14 @@ python demo_swap.py --live --ai  # AI-powered live execution
 
 ## Related Projects
 
+- **[synthesis-steth-treasury](https://github.com/SenorCodigo69/synthesis-steth-treasury)** — stETH Agent Treasury (Lido bounty) — yield-bearing operating budget on Ethereum mainnet, agent can only spend accrued staking yield
 - **[synthesis-zk-agent](https://github.com/SenorCodigo69/synthesis-zk-agent)** — ZK privacy layer (Track 2: "Agents that keep secrets") with Uniswap V4 ZK-gated hook
 - **Conversation log:** [`CONVERSATION-LOG.md`](https://github.com/SenorCodigo69/finance_agent/blob/main/docs/hackathon/CONVERSATION-LOG.md)
 
 ## Hackathon Details
 
 - **Event:** Ethereum Foundation Synthesis Hackathon
-- **Tracks:** "Agents that pay" + Uniswap "Agentic Finance" bounty
+- **Tracks:** "Agents that pay" + Uniswap "Agentic Finance" bounty + Lido "stETH Agent Treasury" bounty
 - **Building period:** March 13-22, 2026
 - **Primary AI:** Claude Opus 4.6 via claude-code
 - **On-chain:** Base mainnet (chain ID 8453)
