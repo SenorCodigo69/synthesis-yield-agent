@@ -1069,7 +1069,7 @@ async def _lp(action: str, weth_amount: float | None, usdc_amount: float | None,
                 click.echo(f"  Position #{token_id}:")
                 click.echo(f"    Token0:      {pos.token0}")
                 click.echo(f"    Token1:      {pos.token1}")
-                click.echo(f"    Fee:         {pos.fee / 10000:.2%}")
+                click.echo(f"    Fee:         {pos.fee / 1_000_000:.2%}")
                 click.echo(f"    Ticks:       [{pos.tick_lower}, {pos.tick_upper}]")
                 click.echo(f"    Liquidity:   {pos.liquidity}")
                 weth_owed = Decimal(str(pos.tokens_owed0)) / Decimal(10**WETH_DECIMALS)

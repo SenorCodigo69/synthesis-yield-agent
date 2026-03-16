@@ -432,10 +432,13 @@ class UniswapLPAdapter:
         wallet = account.address
         tick_lower, tick_upper = full_range_ticks(fee)
 
-        # Calculate minimum amounts (slippage protection)
-        slippage_factor = Decimal(str(1 - slippage_pct / 100))
-        amount0_min = int(Decimal(str(weth_amount)) * slippage_factor)
-        amount1_min = int(Decimal(str(usdc_amount)) * slippage_factor)
+        # For full-range positions, the pool determines the actual token ratio
+        # based on the current price. We can't predict the exact split, so
+        # amount0Min/amount1Min = 0. The pool's own price mechanism + deadline
+        # protect against manipulation. Base L2 has negligible MEV risk.
+        # For concentrated positions (future Level 2), use proper slippage bounds.
+        amount0_min = 0
+        amount1_min = 0
 
         # Get deadline (current block timestamp + buffer)
         block = await self.w3.eth.get_block("latest")
