@@ -1208,7 +1208,9 @@ async def _lp(action: str, weth_amount: float | None, usdc_amount: float | None,
 
             # Read current pool state
             sqrt_price, current_tick = await adapter.get_pool_slot0(fee)
-            current_price = tm.tick_to_eth_price(current_tick)
+            # Derive price from sqrtPriceX96 (more accurate than tick)
+            sqrt_p = sqrt_price / (2**96)
+            current_price = sqrt_p * sqrt_p * (10 ** (18 - 6))
             click.echo(f"  Pool price:       ${current_price:,.2f}")
             click.echo(f"  Current tick:     {current_tick}")
             click.echo()
@@ -1349,15 +1351,17 @@ async def _lp(action: str, weth_amount: float | None, usdc_amount: float | None,
             pos = await adapter.get_position(token_id)
             current_price = await read_pool_price()
 
-            # Estimate position value from pool price + position amounts
-            price_lower = tm.tick_to_eth_price(pos.tick_lower)
-            price_upper = tm.tick_to_eth_price(pos.tick_upper)
+            # Clamp ticks to float-safe range for price conversion
+            safe_lower = max(pos.tick_lower, tm._FLOAT_SAFE_MIN_TICK)
+            safe_upper = min(pos.tick_upper, tm._FLOAT_SAFE_MAX_TICK)
+            price_lower = tm.tick_to_eth_price(safe_lower)
+            price_upper = tm.tick_to_eth_price(safe_upper)
             # Use tokens_owed as proxy for fees (simplified)
             fees_weth = pos.tokens_owed0 / 10**WETH_DECIMALS
             fees_usdc = pos.tokens_owed1 / 10**USDC_DECIMALS
 
-            # Entry price unknown without DB — use midpoint of range as estimate
-            entry_price = (price_lower + price_upper) / 2
+            # Entry price unknown without DB — use current as estimate for full-range
+            entry_price = current_price
 
             # Rough position value (would need sqrtPriceX96 math for exact)
             position_value_usd = 10.0  # Placeholder — needs on-chain calc
@@ -1366,8 +1370,8 @@ async def _lp(action: str, weth_amount: float | None, usdc_amount: float | None,
                 token_id=token_id,
                 entry_price=entry_price,
                 current_price=current_price,
-                tick_lower=pos.tick_lower,
-                tick_upper=pos.tick_upper,
+                tick_lower=safe_lower,
+                tick_upper=safe_upper,
                 fees_weth=fees_weth,
                 fees_usdc=fees_usdc,
                 position_value_usd=position_value_usd,

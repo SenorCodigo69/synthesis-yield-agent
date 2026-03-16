@@ -619,10 +619,11 @@ class UniswapLPAdapter:
         })
 
         sqrt_price_x96 = int.from_bytes(result[:32], "big")
+        # tick is int24 packed in a 256-bit word (ABI-encoded as int256)
         tick_raw = int.from_bytes(result[32:64], "big")
-        # tick is int24 — handle sign extension
-        if tick_raw >= 2**23:
-            tick_raw -= 2**24
+        # Handle two's complement for 256-bit signed integer
+        if tick_raw >= 2**255:
+            tick_raw -= 2**256
         return sqrt_price_x96, tick_raw
 
     # ── Collect Fees ─────────────────────────────────────────
