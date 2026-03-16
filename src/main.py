@@ -941,6 +941,13 @@ async def _register(network: str, rpc_url: str | None):
 def swap(direction: str | None, amount: float | None, use_ai: bool,
          is_live: bool, slippage: float):
     """Swap tokens via Uniswap Trading API with optional AI reasoning."""
+    # S41-L2: Cap slippage to prevent accidental unfavorable execution
+    if slippage > 10.0:
+        click.echo(f"  Error: Slippage {slippage}% exceeds maximum 10%. Use a lower value.")
+        return
+    if slippage <= 0:
+        click.echo(f"  Error: Slippage must be positive.")
+        return
     asyncio.run(_swap(direction, amount, use_ai, is_live, slippage))
 
 
@@ -1005,6 +1012,10 @@ async def _swap(direction: str | None, amount: float | None, use_ai: bool,
                     eth_price = Decimal(str(data["ethereum"]["usd"]))
     except Exception:
         eth_price = Decimal("2000")  # Fallback estimate
+
+    # S41-L1: Validate ETH price is positive (CoinGecko could return 0)
+    if eth_price <= 0:
+        eth_price = Decimal("2000")
 
     weth_balance_usd = weth_balance * eth_price
 
@@ -1082,16 +1093,25 @@ async def _swap(direction: str | None, amount: float | None, use_ai: bool,
         click.echo("  Error: Specify --direction and --amount, or use --ai")
         return
 
+    # S41-M2: Validate amount against wallet balance
+    amount_dec = Decimal(str(amount))
+    if direction == "usdc_to_weth" and amount_dec > usdc_balance:
+        click.echo(f"  Error: Amount ${amount_dec:,.2f} exceeds USDC balance ${usdc_balance:,.6f}")
+        return
+    if direction == "weth_to_usdc" and amount_dec > weth_balance:
+        click.echo(f"  Error: Amount {amount_dec:.8f} exceeds WETH balance {weth_balance:.8f}")
+        return
+
     # Build swap parameters
     if direction == "usdc_to_weth":
         token_in = USDC_BASE
         token_out = WETH_BASE
-        amount_raw = str(int(Decimal(str(amount)) * Decimal(10 ** USDC_DECIMALS)))
+        amount_raw = str(int(amount_dec * Decimal(10 ** USDC_DECIMALS)))
         click.echo(f"  Swap: {amount} USDC -> WETH")
     else:
         token_in = WETH_BASE
         token_out = USDC_BASE
-        amount_raw = str(int(Decimal(str(amount)) * Decimal(10 ** WETH_DECIMALS)))
+        amount_raw = str(int(amount_dec * Decimal(10 ** WETH_DECIMALS)))
         click.echo(f"  Swap: {amount} WETH -> USDC")
 
     if not is_live:

@@ -198,7 +198,10 @@ async def get_swap_recommendation(
     try:
         import anthropic
 
-        client = anthropic.Anthropic(api_key=anthropic_api_key)
+        client = anthropic.Anthropic(
+            api_key=anthropic_api_key,
+            timeout=30.0,  # S41-M1: explicit timeout prevents indefinite hang
+        )
         message = client.messages.create(
             model="claude-haiku-4-5-20251001",
             max_tokens=300,

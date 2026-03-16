@@ -98,6 +98,7 @@ async def get_eth_price() -> Decimal:
                     return Decimal(str(data["ethereum"]["usd"]))
     except Exception:
         pass
+    # S41-L1: fallback if fetch failed or returned zero/negative
     return Decimal("2000")
 
 
@@ -132,6 +133,9 @@ async def main(live: bool = False, use_ai: bool = False):
 
     usdc_bal, weth_bal = await get_balances(w3, wallet)
     eth_price = await get_eth_price()
+    # S41-L1: Validate ETH price is positive
+    if eth_price <= 0:
+        eth_price = Decimal("2000")
     weth_usd = weth_bal * eth_price
 
     print(f"  USDC:     ${usdc_bal:,.6f}")
