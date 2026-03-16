@@ -861,17 +861,36 @@
 
     async function refreshTreasury() {
       try {
-        const calls = [
-          ethRpcCall("eth_call", [{ to: TREASURY, data: "0x9e5056c4" }, "latest"]), // principalStETH()
-          ethRpcCall("eth_call", [{ to: TREASURY, data: "0x1ae6a7dc" }, "latest"]), // currentValueStETH()
-          ethRpcCall("eth_call", [{ to: TREASURY, data: "0x175e439c" }, "latest"]), // availableYield()
-          ethRpcCall("eth_call", [{ to: TREASURY, data: "0xb756239d" }, "latest"]), // wstETHBalance()
-          ethRpcCall("eth_call", [{ to: TREASURY, data: "0xad82cbea" }, "latest"]), // perTxCap()
-          ethRpcCall("eth_call", [{ to: TREASURY, data: "0xd2f343c7" }, "latest"]), // timeWindow()
-          ethRpcCall("eth_call", [{ to: TREASURY, data: "0xd5511ee7" }, "latest"]), // totalYieldWithdrawn()
-        ];
+        // Batch all 7 treasury reads into a single RPC request
+        const sels = ["0x9e5056c4","0x1ae6a7dc","0x175e439c","0xb756239d","0xad82cbea","0xd2f343c7","0xd5511ee7"];
+        const batch = sels.map((sel, i) => ({
+          jsonrpc: "2.0",
+          method: "eth_call",
+          params: [{ to: TREASURY, data: sel }, "latest"],
+          id: rpcId++,
+        }));
 
-        const results = await Promise.all(calls);
+        let results;
+        for (let attempt = 0; attempt < ETH_RPCS.length; attempt++) {
+          const url = ETH_RPCS[(ethRpcIndex + attempt) % ETH_RPCS.length];
+          try {
+            const res = await fetch(url, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(batch),
+            });
+            const data = await res.json();
+            if (!Array.isArray(data)) throw new Error(data.error?.message || "Unexpected response");
+            data.sort((a, b) => a.id - b.id);
+            const err = data.find(r => r.error);
+            if (err) throw new Error(err.error.message);
+            results = data.map(r => r.result);
+            break;
+          } catch (err) {
+            ethRpcIndex++;
+            if (attempt === ETH_RPCS.length - 1) throw err;
+          }
+        }
         const toEth = (hex) => (Number(BigInt(hex)) / 1e18).toFixed(6);
         const toSec = (hex) => Number(BigInt(hex));
 
