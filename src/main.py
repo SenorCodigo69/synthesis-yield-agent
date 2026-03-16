@@ -1043,7 +1043,7 @@ async def _lp(action: str, weth_amount: float | None, usdc_amount: float | None,
     click.echo(f"  {'='*55}")
     click.echo(f"  Wallet:           {wallet}")
     click.echo(f"  PositionManager:  {POSITION_MANAGER}")
-    click.echo(f"  Pool:             WETH-USDC ({fee/10000:.2%} fee)")
+    click.echo(f"  Pool:             WETH-USDC ({fee/1_000_000:.2%} fee)")
 
     if fee not in FEE_TIERS:
         click.echo(f"  Error: Invalid fee tier {fee}. Valid: {list(FEE_TIERS.keys())}")
@@ -1126,7 +1126,7 @@ async def _lp(action: str, weth_amount: float | None, usdc_amount: float | None,
             click.echo(f"  [DRY RUN — add --live to execute on-chain]")
             click.echo(f"  Would mint full-range position with:")
             click.echo(f"    {weth_amount or 0} WETH + {usdc_amount or 0} USDC")
-            click.echo(f"    Fee tier: {fee} ({fee/10000:.2%})")
+            click.echo(f"    Fee tier: {fee} ({fee/1_000_000:.2%})")
             click.echo(f"    Ticks: [{tick_lower}, {tick_upper}]")
 
     elif action == "collect":
