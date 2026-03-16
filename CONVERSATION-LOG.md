@@ -632,4 +632,145 @@ Each entry should capture:
 
 ---
 
+## Day 12 — Uniswap V4 Hook Demo + LP Positions + Pool Analytics (March 16, 2026)
+
+### Session: Hackathon Day 12 Build (Sessions 42-43)
+
+**Participants:** Human (project lead) + Claude Opus 4.6 (via claude-code)
+
+**Key Decisions:**
+- Add Uniswap V3 LP position management to yield agent — full-range WETH-USDC position as yield source
+- Build pool analytics module — compare LP fee yield vs lending APY to inform AI decisions
+- Wire LP yield data into AI swap reasoning for better capital allocation
+
+**Breakthroughs:**
+- Live LP position minted on Base mainnet — token #4816034 (WETH-USDC 0.05% fee, full range)
+- Pool analytics pulling live data — tick, liquidity, fee APY estimates
+- AI brain now considers LP yields alongside lending rates when recommending actions
+
+**Agent Contributions:**
+- Built LP position management module with mint/collect/exit operations
+- Built pool analytics with V3 math (sqrtPriceX96 → price, tick → range)
+- Integrated LP yield data into AI swap recommendation prompt
+- Added `lp` and `pools` CLI commands
+- Wrote tests for LP and pool analytics modules
+
+**Human Contributions:**
+- Directed focus on LP as next Uniswap integration step
+- Approved live LP minting on Base mainnet
+
+---
+
+## Day 13 — "Let the Agent Cook" Bounty + Execution Logger (March 16, 2026)
+
+### Session: Hackathon Day 13 Build (Session 44)
+
+**Participants:** Human (project lead) + Claude Opus 4.6 (via claude-code)
+
+**Key Decisions:**
+- Target "Let the Agent Cook" ($8K, Protocol Labs/EF) bounty — 90% coverage with existing agent
+- Build `agent.json` capability manifest + `src/execution_logger.py` to close the gaps
+- Integrate into existing hackathon submission rather than new repo
+- Analyzed stETH bounty ($3K, Lido) — deferred to next session
+
+**Breakthroughs:**
+- Agent capability manifest covers all bounty requirements in a single JSON file
+- Structured execution logger captures every cycle decision with reasoning — exactly what judges want to see
+- 21 new tests, zero regressions on existing 880 tests
+
+**Agent Contributions:**
+- Designed `agent.json` schema: name, operator wallet, ERC-8004 registrations, 11 tools, compute constraints, 10-step autonomous loop, 5 self-correction mechanisms, safety guardrails
+- Built `src/execution_logger.py`: per-cycle JSON entries with steps, tool calls, decisions (with reasoning), trade executions, failures, compute budget tracking. Bounded to 500 cycles
+- Hooked logger into main.py cycle at every key step
+- Wrote 21 tests covering full lifecycle
+- Ported execution logger to both hackathon repos (yield-agent + zk-agent)
+
+**Human Contributions:**
+- Identified the "Let the Agent Cook" bounty as high-value target
+- Strategy decision: integrate into existing submission, not separate repo
+- Deferred stETH bounty to focus on completing current work first
+
+---
+
+## Day 14 — stETH Agent Treasury: Lido Bounty (March 16, 2026)
+
+### Session: Hackathon Day 14 Build (Session 47)
+
+**Participants:** Human (project lead) + Claude Opus 4.6 (via claude-code)
+
+**Key Decisions:**
+- Build and deploy the Lido "stETH Agent Treasury" ($3K) bounty — Solidity contract on Ethereum mainnet
+- Deploy live (not testnet) — gas is cheap (~0.21 gwei), real on-chain artifact for judges
+- User funded wallet with additional ETH on Ethereum mainnet for deployment + deposit
+- wstETH internally for non-rebasing accounting — no share math surprises
+- Yield = currentValue - principal — simple, auditable, no oracles needed
+
+**Pivots:**
+- Had started this work in a previous session but VS Code crashed mid-build — picked up from partial state (contract + tests existed, nothing committed or deployed)
+- Testnet tokens unavailable — pivoted to mainnet deploy (only ~$1 total cost anyway)
+
+**Breakthroughs:**
+- Full Solidity contract designed, tested, deployed, and verified in a single session
+- AgentTreasury enforces principal protection at the contract level — `assert(currentValueStETH() >= principalStETH)` checked after every agent withdrawal. This is the key innovation: the agent structurally CANNOT touch the principal
+- Deposit flow works perfectly: 0.008 ETH → Lido `submit()` → 0.0065 stETH → wstETH `wrap()` → 0.0053 wstETH held by contract
+- Verified on Sourcify (exact match, runtime + creation bytecode) + Blockscout + Routescan within seconds
+- All 3 hackathon repos cross-linked with live contract references
+
+**Agent Contributions:**
+- Completed `AgentTreasury.sol` — owner deposits, Lido staking, wstETH wrapping, agent yield-only withdrawal with whitelist + cap + cooldown
+- Wrote 27 Foundry tests: mock stETH/wstETH with rebasing simulation, yield accrual, all revert paths, principal invariant across 5 withdrawal cycles
+- Created deploy script (mainnet + Holesky auto-detection), interact.py CLI, .env.example, CI workflow
+- Deployed to Ethereum mainnet, whitelisted wallet, deposited 0.008 ETH
+- Verified contract on Sourcify
+- Created GitHub repo (`synthesis-steth-treasury`), pushed with proper README
+- Built `agent.json` for the treasury with capability manifest
+- Cross-linked all 3 hackathon repos (yield-agent, zk-agent, steth-treasury) in READMEs and agent.json files
+- Updated all 3 landing pages: agents.html (new card), dashboard.html (live Ethereum RPC reads for treasury), index.html (architecture, artifacts, declarations)
+- Updated submission checklist: 380 tests, 6 contracts, 2 chains, 5 bounty tracks
+
+**Human Contributions:**
+- Recalled the stETH work from interrupted session — "we were doing something re stETH?"
+- Funded wallet with additional ETH on Ethereum mainnet for deployment
+- Provided private key for deployment transactions
+- Directed cross-repo integration: "can u connect it to our main hackathon stuff"
+- Pointed out existing landing pages that needed updating: "look we already have these"
+- Drove the wrap-up and session log
+
+**Context:**
+- 5th bounty track now complete — all 5 hackathon bounties done
+- Total on-chain: 6 contracts across 2 chains (Base + Ethereum), 2 ERC-8004 agents
+- 380 tests across all repos (214 yield + 139 ZK + 27 stETH)
+- 14 security audits completed across all hackathon sessions
+- Landing pages deployed with live on-chain data from both chains
+- 6 days until deadline (March 22)
+
+---
+
+## Day 15 — Landing Pages + Dashboard Deploy (March 16, 2026)
+
+### Session: Hackathon Day 15 Polish (Session 48)
+
+**Participants:** Human (project lead) + Claude Opus 4.6 (via claude-code)
+
+**Key Decisions:**
+- Fix dashboard RPC rate limits — batch all calls into single requests with RPC rotation
+- Deploy landing pages to Vercel for public access
+- Add submission declarations to landing page for judge visibility
+
+**Breakthroughs:**
+- All 3 pages deployed to `docs-beige-theta.vercel.app` — judges can see everything without running code
+- Dashboard reads live data from both Base and Ethereum mainnet in real-time
+- Treasury section batches 7 Ethereum RPC calls into a single request — no rate limits
+
+**Agent Contributions:**
+- Fixed dashboard RPC batching for treasury reads
+- Deployed pages to Vercel
+- Added submission declarations to index.html
+
+**Human Contributions:**
+- Directed focus on polish and deployment
+- Identified rate limit issues in dashboard
+
+---
+
 <!-- Add new entries below this line -->
