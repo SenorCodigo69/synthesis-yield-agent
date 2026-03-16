@@ -234,7 +234,7 @@
     <nav style="display:flex;justify-content:center;gap:24px;padding:12px 0;font-size:0.8rem;border-bottom:1px solid var(--border);">
       <a href="index.html">Home</a>
       <a href="dashboard.html" style="color:var(--accent2);font-weight:700;">Dashboard</a>
-      <a href="https://dashboard-theta-nine-18.vercel.app" target="_blank">Trading Dashboard</a>
+      <a href="agents.html">Agent Fleet</a>
       <a href="https://github.com/SenorCodigo69/synthesis-yield-agent" target="_blank">GitHub</a>
     </nav>
 
@@ -356,25 +356,25 @@
             <td>ETH (native)</td>
             <td class="mono" id="bal-eth">--</td>
             <td id="bal-eth-usd">--</td>
-            <td style="color:var(--muted);font-size:0.75rem;">Native</td>
+            <td style="font-size:0.75rem;"><a href="https://basescan.org/address/0x8d691720bF8C81044DB1a77b82D0eF5f5bffdE6C" target="_blank">Wallet</a></td>
           </tr>
           <tr>
             <td>WETH</td>
             <td class="mono" id="bal-weth">--</td>
             <td id="bal-weth-usd">--</td>
-            <td style="color:var(--muted);font-size:0.75rem;">0x4200...0006</td>
+            <td style="font-size:0.75rem;"><a href="https://basescan.org/token/0x4200000000000000000000000000000000000006" target="_blank">0x4200...0006</a></td>
           </tr>
           <tr>
             <td>USDC</td>
             <td class="mono" id="bal-usdc">--</td>
             <td id="bal-usdc-usd">--</td>
-            <td style="color:var(--muted);font-size:0.75rem;">0x8335...2913</td>
+            <td style="font-size:0.75rem;"><a href="https://basescan.org/token/0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" target="_blank">0x8335...2913</a></td>
           </tr>
           <tr>
             <td>aBasUSDC (Aave)</td>
             <td class="mono" id="bal-ausdc">--</td>
             <td id="bal-ausdc-usd">--</td>
-            <td style="color:var(--muted);font-size:0.75rem;">0x4e65...8b13</td>
+            <td style="font-size:0.75rem;"><a href="https://basescan.org/token/0x4e65fE4DbA92790696d040ac24Aa414708F5c0AB" target="_blank">0x4e65...8b13</a></td>
           </tr>
         </tbody>
       </table>
@@ -389,17 +389,69 @@
         </thead>
         <tbody>
           <tr>
-            <td>WETH</td>
-            <td>NonfungiblePositionManager</td>
+            <td><a href="https://basescan.org/token/0x4200000000000000000000000000000000000006" target="_blank">WETH</a></td>
+            <td><a href="https://basescan.org/address/0x03a520b32C04BF3bEEf7BEb72E919cf822Ed34f1" target="_blank">NonfungiblePositionManager</a></td>
             <td id="allow-weth-pm" class="mono">--</td>
           </tr>
           <tr>
-            <td>USDC</td>
-            <td>NonfungiblePositionManager</td>
+            <td><a href="https://basescan.org/token/0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" target="_blank">USDC</a></td>
+            <td><a href="https://basescan.org/address/0x03a520b32C04BF3bEEf7BEb72E919cf822Ed34f1" target="_blank">NonfungiblePositionManager</a></td>
             <td id="allow-usdc-pm" class="mono">--</td>
           </tr>
         </tbody>
       </table>
+    </div>
+
+    <!-- Decision Logic -->
+    <div class="section">
+      <h2>How the Agent Decides Where to Park Capital</h2>
+      <div style="display:grid;gap:16px;">
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:20px;">
+          <div style="font-weight:700;margin-bottom:12px;color:var(--accent2);">4-Stage Decision Pipeline</div>
+          <div style="display:grid;gap:12px;">
+            <div style="border-left:3px solid var(--accent);padding-left:16px;">
+              <div style="font-weight:600;font-size:0.9rem;">1. Rate Collection</div>
+              <div style="color:var(--muted);font-size:0.8rem;">Fetches live APY from Aave V3, Morpho Blue, Compound V3 on Base. Cross-validates across sources — flags outliers.</div>
+            </div>
+            <div style="border-left:3px solid var(--accent);padding-left:16px;">
+              <div style="font-weight:600;font-size:0.9rem;">2. Risk Scoring</div>
+              <div style="color:var(--muted);font-size:0.8rem;">Scores each protocol on 5 factors: TVL (25%), age (20%), audits (20%), utilization (20%), bad debt history (15%). Higher score = riskier.</div>
+            </div>
+            <div style="border-left:3px solid var(--accent);padding-left:16px;">
+              <div style="font-weight:600;font-size:0.9rem;">3. Net APY Calculation</div>
+              <div style="color:var(--muted);font-size:0.8rem;">Subtracts round-trip gas (approve + supply + withdraw) amortized over 90 days. Rejects protocols where net APY &le; 0.</div>
+            </div>
+            <div style="border-left:3px solid var(--accent);padding-left:16px;">
+              <div style="font-weight:600;font-size:0.9rem;">4. Risk-Adjusted Allocation</div>
+              <div style="color:var(--muted);font-size:0.8rem;">Final metric: <code style="color:var(--accent2);">risk_adjusted_yield = net_apy &times; (1 - risk_score)</code>. Allocates proportionally, capped at 40% per protocol. 10% kept as reserve.</div>
+            </div>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+          <div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:16px;">
+            <div style="font-weight:600;font-size:0.85rem;margin-bottom:8px;">Eligibility Gates</div>
+            <div style="color:var(--muted);font-size:0.8rem;line-height:1.8;">
+              &bull; Cross-validation passed<br>
+              &bull; TVL &ge; $10M<br>
+              &bull; Utilization &lt; 85%<br>
+              &bull; APY &lt; 500% (sanity check)<br>
+              &bull; Gas &lt; 50 gwei<br>
+              &bull; Net APY &gt; 0 after gas
+            </div>
+          </div>
+          <div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:16px;">
+            <div style="font-weight:600;font-size:0.85rem;margin-bottom:8px;">AI Brain (Claude Haiku)</div>
+            <div style="color:var(--muted);font-size:0.8rem;line-height:1.8;">
+              &bull; Compares lending APY vs LP fee yield<br>
+              &bull; Never swaps &gt;50% of balance at once<br>
+              &bull; Weighs gas cost vs deposit size<br>
+              &bull; Fail-closed: API error = HOLD<br>
+              &bull; Output: action + amount + reasoning<br>
+              &bull; Confidence score as tiebreaker
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Activity Log -->
@@ -422,7 +474,14 @@
 
   <script>
     // ── Constants ──────────────────────────────────────────────
-    const RPC = "https://mainnet.base.org";
+    const RPCS = [
+      "https://base.llamarpc.com",
+      "https://1rpc.io/base",
+      "https://base.drpc.org",
+      "https://mainnet.base.org",
+    ];
+    let rpcIndex = 0;
+    function getRPC() { return RPCS[rpcIndex % RPCS.length]; }
     const WALLET = "0x8d691720bF8C81044DB1a77b82D0eF5f5bffdE6C";
     const LP_TOKEN_ID = 4816034;
 
@@ -440,42 +499,52 @@
     let countdown = REFRESH_INTERVAL;
     let logs = [];
 
-    // ── RPC Helper ────────────────────────────────────────────
+    // ── RPC Helper (batched + RPC rotation on failure) ─────────
     let rpcId = 1;
-    async function rpcCall(method, params = []) {
-      const res = await fetch(RPC, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jsonrpc: "2.0", method, params, id: rpcId++ }),
-      });
-      const data = await res.json();
-      if (data.error) throw new Error(data.error.message);
-      return data.result;
+    async function rpcBatch(calls) {
+      const batch = calls.map(c => ({
+        jsonrpc: "2.0",
+        method: c.method,
+        params: c.params || [],
+        id: rpcId++,
+      }));
+      const body = JSON.stringify(batch);
+
+      for (let attempt = 0; attempt < RPCS.length; attempt++) {
+        const url = getRPC();
+        try {
+          const res = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body,
+          });
+          const data = await res.json();
+          // Some RPCs return non-array for batch — handle single error
+          if (!Array.isArray(data)) {
+            if (data.error) throw new Error(data.error.message);
+            throw new Error("Unexpected response");
+          }
+          data.sort((a, b) => a.id - b.id);
+          const hasError = data.find(r => r.error);
+          if (hasError) throw new Error(hasError.error.message);
+          return data.map(r => r.result);
+        } catch (err) {
+          console.warn(`RPC ${url} failed: ${err.message}, rotating...`);
+          rpcIndex++;
+          if (attempt === RPCS.length - 1) throw err;
+        }
+      }
     }
 
-    // ERC20 balanceOf(address) selector: 0x70a08231
-    async function getBalance(token, wallet) {
-      const paddedAddr = wallet.slice(2).padStart(64, "0");
-      const data = "0x70a08231" + paddedAddr;
-      const result = await rpcCall("eth_call", [{ to: token, data }, "latest"]);
-      return BigInt(result);
+    function encodeBalanceOf(wallet) {
+      return "0x70a08231" + wallet.slice(2).padStart(64, "0");
     }
 
-    // ERC20 allowance(owner, spender) selector: 0xdd62ed3e
-    async function getAllowance(token, owner, spender) {
-      const paddedOwner = owner.slice(2).padStart(64, "0");
-      const paddedSpender = spender.slice(2).padStart(64, "0");
-      const data = "0xdd62ed3e" + paddedOwner + paddedSpender;
-      const result = await rpcCall("eth_call", [{ to: token, data }, "latest"]);
-      return BigInt(result);
+    function encodeAllowance(owner, spender) {
+      return "0xdd62ed3e" + owner.slice(2).padStart(64, "0") + spender.slice(2).padStart(64, "0");
     }
 
-    // NonfungiblePositionManager positions(uint256) selector: 0x99fbab88
-    async function getPosition(tokenId) {
-      const paddedId = tokenId.toString(16).padStart(64, "0");
-      const data = "0x99fbab88" + paddedId;
-      const result = await rpcCall("eth_call", [{ to: PM, data }, "latest"]);
-      // Decode: 12 fields, each 32 bytes
+    function decodePosition(result) {
       const hex = result.slice(2);
       const field = (i) => BigInt("0x" + hex.slice(i * 64, (i + 1) * 64));
       return {
@@ -494,12 +563,9 @@
       };
     }
 
-    // Pool slot0() selector: 0x3850c7bd — returns sqrtPriceX96, tick, etc.
-    async function getPoolSlot0() {
-      const result = await rpcCall("eth_call", [{ to: POOL, data: "0x3850c7bd" }, "latest"]);
+    function decodeSlot0(result) {
       const hex = result.slice(2);
       const sqrtPriceX96 = BigInt("0x" + hex.slice(0, 64));
-      // tick is int24 at offset 1
       const tickRaw = BigInt("0x" + hex.slice(64, 128));
       const tick = Number(BigInt.asIntN(24, tickRaw));
       return { sqrtPriceX96, tick };
@@ -575,23 +641,32 @@
       try {
         addLog("Fetching on-chain data...");
 
-        // Parallel fetches
-        const [ethBal, wethBal, usdcBal, ausdcBal, wethAllow, usdcAllow, position, poolSlot0, ethPriceData] =
-          await Promise.all([
-            rpcCall("eth_getBalance", [WALLET, "latest"]).then(r => BigInt(r)),
-            getBalance(WETH, WALLET),
-            getBalance(USDC, WALLET),
-            getBalance(AUSDC, WALLET).catch(() => 0n),
-            getAllowance(WETH, WALLET, PM),
-            getAllowance(USDC, WALLET, PM),
-            getPosition(LP_TOKEN_ID),
-            getPoolSlot0(),
-            fetch("https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd&include_24hr_change=true")
-              .then(r => r.json()).catch(() => ({ ethereum: { usd: 2500, usd_24h_change: 0 } })),
-          ]);
+        // Single batched RPC call — all 8 reads in one HTTP request
+        const paddedTokenId = LP_TOKEN_ID.toString(16).padStart(64, "0");
+        const results = await rpcBatch([
+          { method: "eth_getBalance", params: [WALLET, "latest"] },
+          { method: "eth_call", params: [{ to: WETH, data: encodeBalanceOf(WALLET) }, "latest"] },
+          { method: "eth_call", params: [{ to: USDC, data: encodeBalanceOf(WALLET) }, "latest"] },
+          { method: "eth_call", params: [{ to: AUSDC, data: encodeBalanceOf(WALLET) }, "latest"] },
+          { method: "eth_call", params: [{ to: WETH, data: encodeAllowance(WALLET, PM) }, "latest"] },
+          { method: "eth_call", params: [{ to: USDC, data: encodeAllowance(WALLET, PM) }, "latest"] },
+          { method: "eth_call", params: [{ to: PM, data: "0x99fbab88" + paddedTokenId }, "latest"] },
+          { method: "eth_call", params: [{ to: POOL, data: "0x3850c7bd" }, "latest"] },
+        ]);
 
-        const ethPrice = ethPriceData.ethereum.usd;
-        const ethChange = ethPriceData.ethereum.usd_24h_change || 0;
+        const ethBal = BigInt(results[0]);
+        const wethBal = BigInt(results[1]);
+        const usdcBal = BigInt(results[2]);
+        const ausdcBal = BigInt(results[3]);
+        const wethAllow = BigInt(results[4]);
+        const usdcAllow = BigInt(results[5]);
+        const position = decodePosition(results[6]);
+        const poolSlot0 = decodeSlot0(results[7]);
+
+        // Derive ETH price from pool sqrtPriceX96 — no external API needed
+        const sqrtP = Number(poolSlot0.sqrtPriceX96) / 2 ** 96;
+        const ethPrice = sqrtP * sqrtP * (10 ** (WETH_DECIMALS - USDC_DECIMALS));
+        const ethChange = 0; // no 24h change without external API
 
         // Format values
         const ethNum = Number(ethBal) / 1e18;
@@ -614,8 +689,8 @@
         document.getElementById("eth-price").textContent = fmtUsd(ethPrice);
 
         const changeEl = document.getElementById("eth-change");
-        changeEl.textContent = `${ethChange >= 0 ? "+" : ""}${ethChange.toFixed(2)}% (24h)`;
-        changeEl.className = ethChange >= 0 ? "kpi-sub positive" : "kpi-sub negative";
+        changeEl.textContent = "from pool sqrtPriceX96";
+        changeEl.className = "kpi-sub";
 
         // Token Balances Table
         document.getElementById("bal-eth").textContent = ethNum.toFixed(6);
@@ -647,10 +722,7 @@
           lpValueUsd = lpWethNum * ethPrice + lpUsdcNum;
         }
 
-        // Pool price from sqrtPriceX96 (token1/token0 = USDC/WETH)
-        const sqrtP = Number(poolSlot0.sqrtPriceX96) / 2 ** 96;
-        const poolPrice = sqrtP * sqrtP * (10 ** (WETH_DECIMALS - USDC_DECIMALS));
-
+        const poolPrice = ethPrice;
         const feesTotalUsd = feesWeth * ethPrice + feesUsdc;
 
         document.getElementById("lp-status").textContent = liqNum > 0 ? "Active" : "Empty";
@@ -689,8 +761,9 @@
         }
 
       } catch (err) {
-        addLog(`Error: ${err.message}`);
-        console.error(err);
+        addLog(`Error: ${err.message || err}`);
+        console.error("Refresh error:", err);
+        console.error("Stack:", err.stack);
       }
     }
 
