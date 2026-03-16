@@ -14,6 +14,10 @@ import math
 MIN_TICK = -887272
 MAX_TICK = 887272
 
+# Float-safe tick bounds: 1.0001^tick overflows float64 beyond ~±709783
+_FLOAT_SAFE_MAX_TICK = 709780
+_FLOAT_SAFE_MIN_TICK = -709780
+
 # Fee tier → tick spacing
 FEE_TICK_SPACING = {
     100: 1,      # 0.01%
@@ -23,8 +27,15 @@ FEE_TICK_SPACING = {
 }
 
 
+def _check_tick_float_safe(tick: int) -> None:
+    """Raise OverflowError if tick would overflow float64."""
+    if tick > _FLOAT_SAFE_MAX_TICK or tick < _FLOAT_SAFE_MIN_TICK:
+        raise OverflowError(f"Tick {tick} outside float-safe range [{_FLOAT_SAFE_MIN_TICK}, {_FLOAT_SAFE_MAX_TICK}]")
+
+
 def tick_to_price(tick: int) -> float:
     """Convert a Uniswap V3 tick to raw price (token1/token0 in smallest units)."""
+    _check_tick_float_safe(tick)
     return 1.0001 ** tick
 
 
@@ -40,7 +51,11 @@ def tick_to_eth_price(tick: int) -> float:
 
     For WETH(18)/USDC(6): price_usdc_per_eth = 1.0001^tick / 10^12
     """
-    return 1.0001 ** tick / 1e12
+    _check_tick_float_safe(tick)
+    result = 1.0001 ** tick / 1e12
+    if not math.isfinite(result):
+        raise OverflowError(f"tick_to_eth_price({tick}) produced non-finite result")
+    return result
 
 
 def eth_price_to_tick(price_usdc_per_eth: float) -> int:
@@ -62,6 +77,8 @@ def align_tick(tick: int, spacing: int, round_down: bool = True) -> int:
         spacing: Tick spacing for the fee tier.
         round_down: If True, round toward negative infinity. If False, round up.
     """
+    if spacing <= 0:
+        raise ValueError("Tick spacing must be positive")
     if round_down:
         return (tick // spacing) * spacing
     return -(-tick // spacing) * spacing
@@ -75,6 +92,9 @@ def aligned_range(
     Returns (tick_lower, tick_upper) snapped to the fee tier's tick spacing.
     tick_lower is rounded down, tick_upper is rounded up.
     """
+    if price_lower >= price_upper:
+        raise ValueError(f"price_lower ({price_lower}) must be less than price_upper ({price_upper})")
+
     spacing = FEE_TICK_SPACING.get(fee)
     if spacing is None:
         raise ValueError(f"Unknown fee tier: {fee}")
@@ -98,5 +118,6 @@ def aligned_range(
 
 def tick_to_sqrt_price_x96(tick: int) -> int:
     """Convert tick to sqrtPriceX96 for on-chain compatibility."""
+    _check_tick_float_safe(tick)
     sqrt_price = math.sqrt(1.0001 ** tick)
     return int(sqrt_price * (2 ** 96))

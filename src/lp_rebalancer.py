@@ -53,6 +53,8 @@ def check_rebalance(
     Returns:
         RebalanceDecision with recommendation.
     """
+    if tick_upper <= tick_lower:
+        raise ValueError(f"Invalid position: tick_upper ({tick_upper}) must be > tick_lower ({tick_lower})")
     gas_ok = gas_gwei <= GAS_GATE_GWEI
     tick_range = tick_upper - tick_lower
 

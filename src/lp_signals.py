@@ -52,29 +52,63 @@ class LPSignals:
 # ── OHLCV fetch ───────────────────────────────────────────────
 
 
+_MAX_RESPONSE_BYTES = 1_000_000  # 1 MB limit on API response
+_MAX_RETRIES = 2
+_RETRY_DELAY_S = 3
+
+
 async def fetch_eth_ohlcv(days: int = 30) -> list[Candle]:
     """Fetch ETH/USD OHLCV from CoinGecko (free, no key).
 
     Returns 4h candles for 30 days, 1h for 7 days.
+    Retries up to 2 times on failure with exponential backoff.
     """
-    async with aiohttp.ClientSession() as session:
-        params = {"vs_currency": "usd", "days": str(days)}
-        async with session.get(COINGECKO_OHLC_URL, params=params, timeout=aiohttp.ClientTimeout(total=10)) as resp:
-            if resp.status != 200:
-                raise RuntimeError(f"CoinGecko OHLC failed: {resp.status}")
-            data = await resp.json()
+    import asyncio
+    import json
 
-    candles = []
-    for row in data:
-        # CoinGecko returns [timestamp_ms, open, high, low, close]
-        candles.append(Candle(
-            timestamp=row[0] / 1000,
-            open=row[1],
-            high=row[2],
-            low=row[3],
-            close=row[4],
-        ))
-    return candles
+    last_err = None
+    for attempt in range(_MAX_RETRIES + 1):
+        try:
+            async with aiohttp.ClientSession() as session:
+                params = {"vs_currency": "usd", "days": str(days)}
+                async with session.get(COINGECKO_OHLC_URL, params=params, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    if resp.status == 429:
+                        raise RuntimeError("CoinGecko rate limited (429)")
+                    if resp.status != 200:
+                        raise RuntimeError(f"CoinGecko OHLC failed: {resp.status}")
+                    raw = await resp.content.read(_MAX_RESPONSE_BYTES)
+                    data = json.loads(raw)
+        except Exception as e:
+            last_err = e
+            if attempt < _MAX_RETRIES:
+                logger.warning("CoinGecko attempt %d failed: %s, retrying in %ds", attempt + 1, e, _RETRY_DELAY_S * (attempt + 1))
+                await asyncio.sleep(_RETRY_DELAY_S * (attempt + 1))
+                continue
+            raise RuntimeError(f"CoinGecko failed after {_MAX_RETRIES + 1} attempts: {last_err}") from last_err
+
+        # Validate response shape
+        if not isinstance(data, list):
+            raise RuntimeError(f"CoinGecko returned unexpected format: {type(data).__name__}")
+
+        candles = []
+        for i, row in enumerate(data):
+            if not isinstance(row, (list, tuple)) or len(row) < 5:
+                logger.warning("Skipping malformed OHLC row %d: %s", i, row)
+                continue
+            try:
+                candles.append(Candle(
+                    timestamp=float(row[0]) / 1000,
+                    open=float(row[1]),
+                    high=float(row[2]),
+                    low=float(row[3]),
+                    close=float(row[4]),
+                ))
+            except (TypeError, ValueError) as e:
+                logger.warning("Skipping invalid OHLC row %d: %s", i, e)
+                continue
+        return candles
+
+    raise RuntimeError("Unreachable")
 
 
 # ── Pure Python indicators ────────────────────────────────────
@@ -82,6 +116,8 @@ async def fetch_eth_ohlcv(days: int = 30) -> list[Candle]:
 
 def _ema(values: list[float], period: int) -> list[float]:
     """Exponential moving average."""
+    if period <= 0:
+        raise ValueError("EMA period must be positive")
     result = [0.0] * len(values)
     if not values:
         return result
@@ -94,6 +130,8 @@ def _ema(values: list[float], period: int) -> list[float]:
 
 def _sma(values: list[float], period: int) -> list[float]:
     """Simple moving average."""
+    if period <= 0:
+        raise ValueError("SMA period must be positive")
     result = [0.0] * len(values)
     for i in range(len(values)):
         if i < period - 1:

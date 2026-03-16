@@ -51,6 +51,8 @@ def compute_range(signals: LPSignals, fee: int = 500) -> OptimizedRange:
         OptimizedRange with tick bounds, prices, and reasoning.
     """
     price = signals.current_price
+    if price <= 0:
+        raise ValueError(f"Cannot compute range: current price is {price} (must be positive)")
     reasons = []
 
     # ── Step 1: Base width from ATR ──────────────────────────

@@ -132,7 +132,7 @@ def compute_il_report(
 
     # Estimate HODL value (approximate using position value + IL)
     # value_hold = value_pool / (1 + il)
-    if 1 + il_pct != 0:
+    if abs(1 + il_pct) > 1e-9:
         value_hold = position_value_usd / (1 + il_pct)
     else:
         value_hold = position_value_usd
