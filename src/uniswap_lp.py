@@ -552,6 +552,7 @@ class UniswapLPAdapter:
         private_key: str,
         token_id: int,
         burn_nft: bool = True,
+        slippage_pct: float = 2.0,
     ) -> ExitResult:
         """Fully exit an LP position: decrease liquidity → collect → burn.
 
@@ -575,11 +576,17 @@ class UniswapLPAdapter:
         block = await self.w3.eth.get_block("latest")
         deadline = block["timestamp"] + DEFAULT_DEADLINE_SECONDS
 
+        # S44-H1: Slippage protection — use tokensOwed as baseline for min amounts
+        # For full exit, we expect to get back at least (1 - slippage) of owed tokens
+        slippage_factor = Decimal(str(1 - slippage_pct / 100))
+        amount0_min = max(int(Decimal(str(position.tokens_owed0)) * slippage_factor), 0)
+        amount1_min = max(int(Decimal(str(position.tokens_owed1)) * slippage_factor), 0)
+
         decrease_params = (
             token_id,               # tokenId
             position.liquidity,     # liquidity (all of it)
-            0,                      # amount0Min (accept any)
-            0,                      # amount1Min (accept any)
+            amount0_min,            # amount0Min (slippage-protected)
+            amount1_min,            # amount1Min (slippage-protected)
             deadline,               # deadline
         )
 
@@ -605,10 +612,23 @@ class UniswapLPAdapter:
             max_uint128,
         )
 
-        tx_hash_collect, collect_receipt = await self._build_sign_send_with_receipt(
-            self._pm.functions.collect(collect_params),
-            private_key,
-        )
+        # S44-M5: Report partial success if collect fails after decrease
+        try:
+            tx_hash_collect, collect_receipt = await self._build_sign_send_with_receipt(
+                self._pm.functions.collect(collect_params),
+                private_key,
+            )
+        except Exception as e:
+            logger.error(
+                "Collect failed after decrease succeeded (tx=%s). "
+                "Tokens are safe in contract — retry collect for position #%d. Error: %s",
+                tx_hash_decrease, token_id, e,
+            )
+            raise RuntimeError(
+                f"Decrease succeeded ({tx_hash_decrease}) but collect failed: {e}. "
+                f"Tokens are safe — retry: collect --token-id {token_id} --live"
+            ) from e
+
         amount0, amount1 = self._parse_collect_receipt(collect_receipt)
         logger.info(
             "Collected: WETH=%s USDC=%s tx=%s",
@@ -629,7 +649,7 @@ class UniswapLPAdapter:
             except Exception as e:
                 logger.warning("Burn failed (non-critical): %s", e)
 
-        # Estimate fees vs principal (rough — fees are whatever was owed)
+        # Estimate fees vs principal (rough — fees are whatever was owed pre-decrease)
         fees0 = position.tokens_owed0
         fees1 = position.tokens_owed1
 
