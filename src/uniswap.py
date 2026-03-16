@@ -4,6 +4,14 @@ Uses the Uniswap Trading API (trade-api.gateway.uniswap.org) for
 optimal routing across V2/V3/V4 pools and UniswapX on Base chain.
 
 Flow: check_approval → quote → sign Permit2 → swap → broadcast
+
+Security:
+- Validates swap tx `to` address against known Uniswap contracts
+- Validates Permit2 domain (chain ID + verifying contract)
+- Validates quote amount_out > 0
+- Enforces gas price ceiling
+- API timeouts on all requests
+- Error messages sanitized (no API response body leaks)
 """
 
 import logging
@@ -18,10 +26,12 @@ from web3 import AsyncWeb3
 logger = logging.getLogger(__name__)
 
 API_BASE = "https://trade-api.gateway.uniswap.org/v1"
+API_TIMEOUT = aiohttp.ClientTimeout(total=30)
 
 # Well-known addresses on Base (chain 8453)
 PERMIT2 = "0x000000000022D473030F116dDEE9F6B43aC78BA3"
 UNIVERSAL_ROUTER = "0x6ff5693b99212da76ad316178a184ab56d299b43"
+PROXY_NO_PERMIT2 = "0x02E5be68D46DAc0B524905bfF209cf47EE6dB2a9"
 USDC_BASE = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
 WETH_BASE = "0x4200000000000000000000000000000000000006"
 NATIVE_ETH = "0x0000000000000000000000000000000000000000"
@@ -30,29 +40,19 @@ USDC_DECIMALS = 6
 WETH_DECIMALS = 18
 BASE_CHAIN_ID = 8453
 
-# ERC-20 approve ABI for Permit2 approval
-APPROVE_ABI = [
-    {
-        "inputs": [
-            {"name": "spender", "type": "address"},
-            {"name": "amount", "type": "uint256"},
-        ],
-        "name": "approve",
-        "outputs": [{"name": "", "type": "bool"}],
-        "stateMutability": "nonpayable",
-        "type": "function",
-    },
-    {
-        "inputs": [
-            {"name": "owner", "type": "address"},
-            {"name": "spender", "type": "address"},
-        ],
-        "name": "allowance",
-        "outputs": [{"name": "", "type": "uint256"}],
-        "stateMutability": "view",
-        "type": "function",
-    },
-]
+# Allowlist of valid `to` addresses for swap transactions
+ALLOWED_SWAP_TARGETS = {
+    UNIVERSAL_ROUTER.lower(),
+    PROXY_NO_PERMIT2.lower(),
+    PERMIT2.lower(),
+    USDC_BASE.lower(),
+    WETH_BASE.lower(),
+}
+
+# Gas price ceiling (gwei) — prevents overspend on gas spikes
+MAX_GAS_PRICE_GWEI = 5  # Base mainnet is typically <0.01 gwei
+
+VALID_ROUTING = {"CLASSIC", "WRAP", "UNWRAP", "BRIDGE"}
 
 
 @dataclass
@@ -90,11 +90,17 @@ class UniswapAdapter:
     """
 
     def __init__(self, api_key: str, w3: AsyncWeb3, chain_id: int = BASE_CHAIN_ID):
-        self.api_key = api_key
+        self._api_key = api_key
         self.w3 = w3
         self.chain_id = chain_id
-        self._headers = {
-            "x-api-key": api_key,
+
+    def __repr__(self) -> str:
+        return f"UniswapAdapter(chain={self.chain_id})"
+
+    @property
+    def _headers(self) -> dict:
+        return {
+            "x-api-key": self._api_key,
             "Content-Type": "application/json",
             "accept": "application/json",
         }
@@ -108,7 +114,7 @@ class UniswapAdapter:
     ) -> dict | None:
         """Check if Permit2 is approved to spend the token.
 
-        Returns the approval transaction dict if approval is needed, None if already approved.
+        Returns the approval transaction dict if needed, None if already approved.
         """
         payload = {
             "walletAddress": wallet,
@@ -121,10 +127,10 @@ class UniswapAdapter:
             f"{API_BASE}/check_approval",
             json=payload,
             headers=self._headers,
+            timeout=API_TIMEOUT,
         ) as resp:
             if resp.status != 200:
-                body = await resp.text()
-                raise RuntimeError(f"check_approval failed ({resp.status}): {body}")
+                raise RuntimeError(f"check_approval failed ({resp.status})")
             data = await resp.json()
 
         approval_tx = data.get("approval")
@@ -160,22 +166,35 @@ class UniswapAdapter:
             f"{API_BASE}/quote",
             json=payload,
             headers=self._headers,
+            timeout=API_TIMEOUT,
         ) as resp:
             if resp.status != 200:
-                body = await resp.text()
-                raise RuntimeError(f"quote failed ({resp.status}): {body}")
+                raise RuntimeError(f"quote failed ({resp.status})")
             data = await resp.json()
 
         quote = data.get("quote", {})
         routing = data.get("routing", "CLASSIC")
         permit_data = data.get("permitData")
 
+        amount_out = quote.get("output", {}).get("amount", "0")
+
+        # Validate quote is non-zero
+        if not amount_out or amount_out == "0":
+            raise RuntimeError("Quote returned zero output amount — aborting")
+
+        # Validate routing type
+        if routing not in VALID_ROUTING:
+            raise RuntimeError(
+                f"Unsupported routing type: {routing}. "
+                f"Expected one of {VALID_ROUTING}"
+            )
+
         return SwapQuote(
             quote_raw=quote,
             permit_data=permit_data,
             routing=routing,
             amount_in=quote.get("input", {}).get("amount", amount),
-            amount_out=quote.get("output", {}).get("amount", "0"),
+            amount_out=amount_out,
             token_in=token_in,
             token_out=token_out,
             gas_fee=data.get("gasFee"),
@@ -185,18 +204,30 @@ class UniswapAdapter:
     def sign_permit2(self, quote: SwapQuote, private_key: str) -> str | None:
         """Sign the Permit2 EIP-712 typed data from the quote.
 
+        Validates domain chain ID and verifying contract before signing.
         Returns the hex signature, or None if no permit data.
         """
         if not quote.permit_data:
             return None
 
-        account = Account.from_key(private_key)
-
         domain = quote.permit_data["domain"]
         types = quote.permit_data["types"]
         values = quote.permit_data["values"]
 
-        # eth_account's encode_typed_data expects specific format
+        # Validate Permit2 domain before signing
+        if domain.get("chainId") != self.chain_id:
+            raise RuntimeError(
+                f"Permit2 domain chain ID mismatch: "
+                f"expected {self.chain_id}, got {domain.get('chainId')}"
+            )
+        verifier = domain.get("verifyingContract", "").lower()
+        if verifier != PERMIT2.lower():
+            raise RuntimeError(
+                f"Permit2 verifying contract mismatch: "
+                f"expected {PERMIT2}, got {domain.get('verifyingContract')}"
+            )
+
+        account = Account.from_key(private_key)
         signable = encode_typed_data(
             domain_data=domain,
             message_types=types,
@@ -229,15 +260,24 @@ class UniswapAdapter:
             f"{API_BASE}/swap",
             json=payload,
             headers=self._headers,
+            timeout=API_TIMEOUT,
         ) as resp:
             if resp.status != 200:
-                body = await resp.text()
-                raise RuntimeError(f"swap failed ({resp.status}): {body}")
+                raise RuntimeError(f"swap endpoint failed ({resp.status})")
             data = await resp.json()
 
         swap_tx = data.get("swap")
         if not swap_tx or not swap_tx.get("data"):
-            raise RuntimeError(f"Empty swap transaction returned: {data}")
+            raise RuntimeError("Empty swap transaction returned by API")
+
+        # Validate swap target is a known Uniswap contract
+        target = swap_tx.get("to", "").lower()
+        if target not in ALLOWED_SWAP_TARGETS:
+            raise RuntimeError(
+                f"Swap tx targets unknown contract {swap_tx.get('to')} — "
+                f"rejecting to prevent fund theft. "
+                f"Allowed: {[UNIVERSAL_ROUTER, PROXY_NO_PERMIT2]}"
+            )
 
         return swap_tx
 
@@ -260,8 +300,16 @@ class UniswapAdapter:
             slippage: Slippage tolerance percentage (0.5 = 0.5%)
 
         Returns:
-            SwapResult with tx hash and amounts.
+            SwapResult with tx hash and quoted amounts.
         """
+        # Validate amount
+        try:
+            amount_int = int(amount)
+            if amount_int <= 0:
+                raise ValueError
+        except (ValueError, TypeError):
+            raise ValueError(f"Amount must be a positive integer string, got: {amount!r}")
+
         account = Account.from_key(private_key)
         wallet = account.address
 
@@ -287,17 +335,11 @@ class UniswapAdapter:
         signature = self.sign_permit2(quote, private_key)
 
         # Step 4: Get swap transaction
-        if quote.routing in ("CLASSIC", "WRAP", "UNWRAP", "BRIDGE"):
-            swap_tx = await self.execute_swap(session, quote, signature)
+        swap_tx = await self.execute_swap(session, quote, signature)
 
-            # Step 5: Sign and broadcast
-            logger.info("Broadcasting swap transaction...")
-            tx_hash, receipt = await self._sign_and_broadcast(swap_tx, private_key)
-        else:
-            raise RuntimeError(
-                f"UniswapX routing ({quote.routing}) not yet supported — "
-                f"use routingPreference: FASTEST to force CLASSIC"
-            )
+        # Step 5: Sign and broadcast
+        logger.info("Broadcasting swap transaction...")
+        tx_hash, receipt = await self._sign_and_broadcast(swap_tx, private_key)
 
         logger.info(
             f"Swap complete: tx={tx_hash} block={receipt['blockNumber']}"
@@ -333,7 +375,7 @@ class UniswapAdapter:
             "from": account.address,
             "data": tx_dict.get("data", "0x"),
             "value": _parse_int(tx_dict.get("value", 0)),
-            "chainId": tx_dict.get("chainId", self.chain_id),
+            "chainId": self.chain_id,  # Always enforce our chain ID
         }
 
         # Use gas params from API if provided, otherwise estimate
@@ -344,15 +386,31 @@ class UniswapAdapter:
 
         # EIP-1559 gas pricing — use API values or fetch from chain
         if tx_dict.get("maxFeePerGas"):
-            tx["maxFeePerGas"] = _parse_int(tx_dict["maxFeePerGas"])
-            tx["maxPriorityFeePerGas"] = _parse_int(
-                tx_dict.get("maxPriorityFeePerGas", 0)
-            )
+            max_fee = _parse_int(tx_dict["maxFeePerGas"])
+            priority_fee = _parse_int(tx_dict.get("maxPriorityFeePerGas", 0))
         else:
-            # Fetch from chain
             base_fee = (await self.w3.eth.get_block("latest"))["baseFeePerGas"]
-            tx["maxFeePerGas"] = base_fee * 2
-            tx["maxPriorityFeePerGas"] = await self.w3.eth.max_priority_fee
+            max_fee = base_fee * 2
+            priority_fee = await self.w3.eth.max_priority_fee
+
+        # Gas price ceiling — prevent overspend
+        max_fee_gwei = max_fee / 10**9
+        if max_fee_gwei > MAX_GAS_PRICE_GWEI:
+            logger.warning(
+                f"Gas price {max_fee_gwei:.2f} gwei exceeds cap "
+                f"{MAX_GAS_PRICE_GWEI} gwei — capping"
+            )
+            max_fee = MAX_GAS_PRICE_GWEI * 10**9
+            priority_fee = min(priority_fee, max_fee)
+
+        # Validate gas values are positive
+        if max_fee <= 0:
+            base_fee = (await self.w3.eth.get_block("latest"))["baseFeePerGas"]
+            max_fee = base_fee * 2
+            priority_fee = await self.w3.eth.max_priority_fee
+
+        tx["maxFeePerGas"] = max_fee
+        tx["maxPriorityFeePerGas"] = priority_fee
 
         # Get nonce
         tx["nonce"] = await self.w3.eth.get_transaction_count(
@@ -365,6 +423,6 @@ class UniswapAdapter:
 
         receipt = await self.w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
         if receipt.get("status") == 0:
-            raise RuntimeError(f"Swap tx reverted: {tx_hash.hex()}")
+            raise RuntimeError(f"Transaction reverted: {tx_hash.hex()}")
 
         return tx_hash.hex(), receipt
