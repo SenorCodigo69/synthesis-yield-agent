@@ -130,8 +130,10 @@ Safety: No private keys pass through the AI. Only public market data is analyzed
 | Action | Tx Hash | Details |
 |---|---|---|
 | USDC -> WETH swap | `0xd368dae5...` | 1 USDC via Uniswap Trading API |
-| Permit2 approval | Included in swap flow | EIP-712 typed data signing |
-| Aave V3 deposit | `0xdd2dcabb...` | 10 USDC supply (block 43440158) |
+| ETH -> USDC swap | `0x15192308...` | 0.002 ETH -> 4.60 USDC (block 43446422) |
+| Aave V3 deposit #1 | `0xdd2dcabb...` | 10 USDC supply (block 43440158) |
+| Aave V3 deposit #2 | `0x638f4567...` | 4 USDC supply (block 43446450) |
+| **Total Aave position** | — | **14 USDC earning ~2.5% APY** |
 
 **Wallet:** `0x8d691720bF8C81044DB1a77b82D0eF5f5bffdE6C`
 
