@@ -1,0 +1,161 @@
+{
+  "name": "Synthesis Yield Agent",
+  "version": "1.0.0",
+  "description": "Autonomous DeFi yield agent that scans lending protocols and Uniswap LP pools, allocates capital for optimal risk-adjusted yield, and manages positions on Base mainnet. AI-powered swap reasoning, ZK privacy integration, circuit breakers, and full audit trail.",
+  "operator_wallet": "0x8d691720bF8C81044DB1a77b82D0eF5f5bffdE6C",
+  "identity": {
+    "erc8004_registrations": [
+      {
+        "id": 32272,
+        "label": "Yield Agent",
+        "chain": "base",
+        "purpose": "Autonomous yield optimization across Aave, Morpho, Compound, and Uniswap LP"
+      }
+    ]
+  },
+  "supported_tools": [
+    {
+      "name": "aave_v3",
+      "type": "defi_protocol",
+      "description": "Lending protocol — supply USDC for yield on Base mainnet",
+      "capabilities": ["supply", "withdraw", "rate_query"]
+    },
+    {
+      "name": "morpho_blue",
+      "type": "defi_protocol",
+      "description": "Lending protocol — optimized USDC yield on Base mainnet",
+      "capabilities": ["supply", "withdraw", "rate_query"]
+    },
+    {
+      "name": "compound_v3",
+      "type": "defi_protocol",
+      "description": "Lending protocol — USDC yield on Base mainnet",
+      "capabilities": ["supply", "withdraw", "rate_query"]
+    },
+    {
+      "name": "uniswap_v3_swap",
+      "type": "defi_protocol",
+      "description": "Token swaps via Uniswap Trading API (Base mainnet)",
+      "capabilities": ["swap", "quote", "permit2_signing"]
+    },
+    {
+      "name": "uniswap_v3_lp",
+      "type": "defi_protocol",
+      "description": "Liquidity provision via NonfungiblePositionManager (Base mainnet)",
+      "capabilities": ["mint_position", "collect_fees", "exit_position", "position_query"]
+    },
+    {
+      "name": "claude_llm",
+      "type": "ai_model",
+      "description": "Claude Haiku 4.5 for swap reasoning — analyzes yields, balances, gas, and recommends optimal action",
+      "role": "swap_decision_engine"
+    },
+    {
+      "name": "defillama_api",
+      "type": "data_api",
+      "description": "DeFi Llama yields API — cross-protocol yield rates and TVL data"
+    },
+    {
+      "name": "coingecko_api",
+      "type": "data_api",
+      "description": "ETH/USD price data for swap valuation"
+    },
+    {
+      "name": "base_rpc",
+      "type": "blockchain_rpc",
+      "description": "Base L2 mainnet RPC — on-chain reads, gas estimation, transaction broadcast"
+    },
+    {
+      "name": "sqlite_database",
+      "type": "persistence",
+      "description": "Local SQLite for execution history, portfolio state, audit trail"
+    }
+  ],
+  "tech_stacks": ["python", "asyncio", "web3", "aiohttp", "sqlite", "click"],
+  "compute_constraints": {
+    "ai_swap_timeout_sec": 30,
+    "max_cycle_interval_sec": 300,
+    "max_api_calls_per_cycle": 20,
+    "token_budget_tracking": true,
+    "rate_limit_aware": true
+  },
+  "task_categories": [
+    "yield_scanning",
+    "rate_cross_validation",
+    "capital_allocation",
+    "ai_swap_reasoning",
+    "on_chain_execution",
+    "lp_position_management",
+    "circuit_breaker_monitoring",
+    "rebalance_detection",
+    "portfolio_tracking",
+    "zk_privacy_integration"
+  ],
+  "safety_guardrails": {
+    "max_swap_fraction": 0.50,
+    "min_swap_usd": 1.0,
+    "fail_closed_on_ai_failure": true,
+    "circuit_breakers": ["depeg_monitor", "tvl_crash", "gas_freeze", "rate_divergence"],
+    "spending_scope_enforced": true,
+    "paper_mode_default": true,
+    "live_mode_requires_explicit_flag": true,
+    "slippage_ceiling_pct": 10.0,
+    "gas_price_ceiling_gwei": 5,
+    "rate_cross_validation_required": true
+  },
+  "autonomous_loop": {
+    "steps": [
+      "SCAN: Fetch yield rates from Aave V3, Morpho Blue, Compound V3 via DeFi Llama + on-chain validation",
+      "VALIDATE: Cross-validate rates across 3 data sources, reject anomalies (>2x median)",
+      "MONITOR: Check circuit breakers (USDC depeg, TVL crash, gas freeze, rate divergence)",
+      "ASSESS: Score protocols by risk-adjusted yield (APY, TVL, utilization, chain risk)",
+      "ALLOCATE: Compute optimal capital allocation across eligible protocols",
+      "REBALANCE: Detect rate shifts, trigger rebalancing if sustained differential > threshold",
+      "EXECUTE: Deposit/withdraw USDC to highest-yield protocols (paper or live mode)",
+      "ACCRUE: Track yield accrual on existing positions, update portfolio state",
+      "PERSIST: Save execution records, portfolio snapshots, and audit trail to SQLite"
+    ],
+    "self_correction": [
+      "Rate divergence detection: if on-chain rate differs from API by >2x, use on-chain as truth",
+      "Depeg monitor: if USDC depegs >2%, emergency withdraw all positions",
+      "Gas freeze: if gas exceeds ceiling, pause execution until normalized",
+      "Rebalance tracker: sustained rate differential over N hours triggers capital reallocation",
+      "Fail-closed AI: if Claude swap recommendation fails, fall back to rule-based logic"
+    ]
+  },
+  "execution_log": {
+    "format": "json",
+    "path": "data/agent_log.json",
+    "captures": [
+      "cycle_id",
+      "timestamp",
+      "step_name",
+      "tool_calls (API/protocol/AI)",
+      "decisions (allocate/rebalance/withdraw with reasoning)",
+      "retries and failures",
+      "executions (deposit/withdraw/swap)",
+      "final_outputs (rates, allocations, portfolio state)"
+    ]
+  },
+  "on_chain_artifacts": {
+    "chain": "base",
+    "chain_id": 8453,
+    "lp_positions": [
+      {
+        "token_id": 4816034,
+        "pool": "WETH-USDC",
+        "fee_tier": 500,
+        "type": "full_range",
+        "tx_hash": "83c7071962e5a2267ad95fa0afad585720f221516bf56e00abde81c45341793a"
+      }
+    ],
+    "contracts_used": {
+      "NonfungiblePositionManager": "0x03a520b32C04BF3bEEf7BEb72E919cf822Ed34f1",
+      "UniswapV3Factory": "0x33128a8fC17869897dcE68Ed026d694621f6FDfD",
+      "Permit2": "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+      "AaveV3Pool": "0xA238Dd80C259a72e81d7e4664a9801593F98d1c5",
+      "USDC": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+      "WETH": "0x4200000000000000000000000000000000000006"
+    }
+  }
+}

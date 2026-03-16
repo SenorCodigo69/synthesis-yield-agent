@@ -46,6 +46,7 @@ from src.models import (
     ProtocolName,
     SpendingScope,
 )
+from src.execution_logger import ExecutionLogger
 from src.portfolio import Portfolio
 from src.strategy.allocator import AllocationPlan, Allocation, compute_allocations
 from src.strategy.rebalancer import check_rebalance_triggers, RebalanceTracker
@@ -1583,6 +1584,7 @@ async def _run(interval: int, capital: Decimal, mode: ExecutionMode):
 
     db = Database()
     await db.connect()
+    exec_log = ExecutionLogger()
 
     try:
         portfolio = Portfolio(capital, db)
@@ -1604,38 +1606,51 @@ async def _run(interval: int, capital: Decimal, mode: ExecutionMode):
             cycle += 1
             now = datetime.now(tz=timezone.utc)
             click.echo(f"--- Cycle {cycle} ({now.strftime('%H:%M:%S UTC')}) ---")
+            exec_log.begin_cycle(cycle, mode=mode.value)
 
             try:
-                # Fetch rates
+                # ── SCAN: Fetch rates ─────────────────────────────────
+                exec_log.log_step("scan_rates", "started")
                 async with aiohttp.ClientSession() as session:
                     rates = await fetch_validated_rates(
                         http_session=session, rpc_url=rpc_url, chain=Chain.BASE,
                     )
+                exec_log.log_tool_call("defillama", "fetch_rates", detail=f"{len(rates)} protocols")
+                exec_log.log_step("scan_rates", "ok", f"{len(rates)} rates fetched")
 
                 gas = await _get_gas(rpc_url)
+                exec_log.log_tool_call("base_rpc", "fetch_gas", detail=f"{gas.total_gwei:.4f} gwei")
                 tracker.record_rates(rates)
 
-                # Fetch live USDC price for depeg detection
+                # ── VALIDATE: Depeg check ─────────────────────────────
+                exec_log.log_step("validate_depeg", "started")
                 async with aiohttp.ClientSession() as price_session:
                     usdc_price = await fetch_usdc_price(price_session)
+                exec_log.log_tool_call("coingecko", "usdc_price", detail=f"${usdc_price:.4f}")
+                exec_log.log_step("validate_depeg", "ok", f"USDC=${usdc_price:.4f}")
 
-                # ── Circuit breaker check ─────────────────────────────
+                # ── MONITOR: Circuit breaker check ────────────────────
+                exec_log.log_step("circuit_breakers", "started")
                 system_health = monitor.check_system_health(rates, gas, usdc_price)
                 trips = system_health.breaker_trips
 
                 if trips:
                     for trip in trips:
                         click.echo(f"  *** [{trip.severity.upper()}] {trip.message}")
+                        exec_log.log_decision("circuit_breaker", trip.severity, reasoning=trip.message)
+                exec_log.log_step("circuit_breakers", "ok" if not trips else "tripped",
+                                  f"{len(trips)} trips")
 
                 # Handle emergency withdrawals triggered by circuit breakers
                 if breakers.requires_emergency_withdraw(trips) and portfolio.positions:
                     click.echo("  !!! CIRCUIT BREAKER EMERGENCY — withdrawing all positions")
+                    exec_log.log_decision("emergency_withdraw", "triggered",
+                                          reasoning="Circuit breaker requires full withdrawal")
                     emergency_scope = SpendingScope(withdrawal_cooldown_secs=0)
                     emergency_executor = Executor(
                         mode=mode, db=db, portfolio=portfolio,
                         scope=emergency_scope, gas_price=gas,
                     )
-                    # Empty plan → executor computes full withdrawal for all positions
                     empty_plan = AllocationPlan(
                         allocations=[],
                         scored_protocols=[],
@@ -1649,9 +1664,12 @@ async def _run(interval: int, capital: Decimal, mode: ExecutionMode):
                             f"  !!! {r.action.value} {r.protocol.value}: "
                             f"${r.amount_usd:,.0f} ({r.status.value})"
                         )
-                    # Skip rest of cycle after emergency — don't re-deposit
+                        exec_log.log_execution(
+                            r.protocol.value, r.action.value, float(r.amount_usd), r.status.value,
+                        )
                     click.echo("  !!! Skipping normal execution after emergency withdraw")
                     click.echo()
+                    exec_log.end_cycle({"rates": len(rates), "health": "emergency"})
                     await asyncio.sleep(interval)
                     continue
 
@@ -1659,41 +1677,57 @@ async def _run(interval: int, capital: Decimal, mode: ExecutionMode):
                 if not system_health.is_operational:
                     click.echo("  System degraded — skipping execution this cycle")
                     click.echo()
+                    exec_log.end_cycle({"rates": len(rates), "health": "degraded"})
                     await asyncio.sleep(interval)
                     continue
 
-                # ── Normal cycle ──────────────────────────────────────
-
-                # Accrue yield on existing positions
+                # ── ACCRUE: Yield on existing positions ───────────────
+                total_yield = Decimal("0")
                 if last_cycle_time and portfolio.positions:
                     hours_elapsed = Decimal(str(
                         (now - last_cycle_time).total_seconds() / 3600
                     ))
                     rate_map = {r.protocol.value: r.apy_median for r in rates}
-                    total_yield = Decimal("0")
                     for proto, apy in rate_map.items():
                         y = portfolio.accrue_yield(proto, apy, hours_elapsed)
                         if y > 0:
                             total_yield += y
                     if total_yield > 0:
                         click.echo(f"  Yield accrued: ${total_yield:.6f} ({hours_elapsed:.2f}h)")
+                        exec_log.log_step("accrue_yield", "ok", f"${total_yield:.6f}")
 
                 last_cycle_time = now
 
-                # Compute allocation
+                # ── ALLOCATE: Compute allocation ──────────────────────
+                exec_log.log_step("allocate", "started")
                 plan = compute_allocations(rates, gas, capital, scope)
+                exec_log.log_decision("allocation", "computed", data={
+                    "eligible": plan.eligible_count,
+                    "total_allocated": float(plan.total_allocated_usd),
+                    "reserve": float(plan.reserve_usd),
+                })
+                exec_log.log_step("allocate", "ok", f"{plan.eligible_count} eligible protocols")
 
-                # Check rebalance triggers
+                # ── REBALANCE: Check triggers ─────────────────────────
                 signals = check_rebalance_triggers(rates, plan, gas, scope, tracker)
+                for s in signals:
+                    if s.should_act:
+                        exec_log.log_decision("rebalance", "triggered", reasoning=s.message)
 
-                # Execute plan
+                # ── EXECUTE: Run plan ─────────────────────────────────
+                exec_log.log_step("execute", "started")
                 executor = Executor(
                     mode=mode, db=db, portfolio=portfolio,
                     scope=scope, gas_price=gas,
                 )
                 records = await executor.execute_plan(plan, rates)
 
-                # Log summary
+                for r in records:
+                    exec_log.log_execution(
+                        r.protocol.value, r.action.value, float(r.amount_usd), r.status.value,
+                    )
+
+                # ── REPORT: Log summary ───────────────────────────────
                 successful = sum(1 for r in records if r.status in (ExecutionStatus.SUCCESS, ExecutionStatus.SIMULATED))
                 health_label = "OK" if system_health.is_operational else "DEGRADED"
                 click.echo(
@@ -1704,6 +1738,7 @@ async def _run(interval: int, capital: Decimal, mode: ExecutionMode):
                     f"{len(signals)} signals | "
                     f"health: {health_label}"
                 )
+                exec_log.log_step("execute", "ok", f"{successful}/{len(records)} executed")
 
                 for a_proto, a_amount in sorted(portfolio.positions.items()):
                     click.echo(f"  -> {a_proto}: ${a_amount:,.0f}")
@@ -1714,8 +1749,21 @@ async def _run(interval: int, capital: Decimal, mode: ExecutionMode):
 
                 click.echo()
 
+                exec_log.end_cycle({
+                    "rates": len(rates),
+                    "eligible": plan.eligible_count,
+                    "executed": successful,
+                    "signals": len([s for s in signals if s.should_act]),
+                    "allocated_usd": float(portfolio.allocated_usd),
+                    "reserve_usd": float(portfolio.reserve_usd),
+                    "yield_accrued": float(total_yield),
+                    "health": health_label.lower(),
+                })
+
             except Exception as e:
                 logger.error(f"Cycle {cycle} failed: {e}")
+                exec_log.log_failure("cycle", str(e), recoverable=True)
+                exec_log.end_cycle({"rates": 0, "health": "error"})
 
             await asyncio.sleep(interval)
     finally:
