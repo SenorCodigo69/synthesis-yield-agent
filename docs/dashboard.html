@@ -257,6 +257,11 @@
         <div class="kpi-sub" id="total-sub"></div>
       </div>
       <div class="kpi">
+        <div class="kpi-label">LP Value</div>
+        <div class="kpi-value neutral" id="lp-kpi-value">--</div>
+        <div class="kpi-sub" id="lp-kpi-sub">In Uniswap V3</div>
+      </div>
+      <div class="kpi">
         <div class="kpi-label">USDC Balance</div>
         <div class="kpi-value" id="usdc-balance">--</div>
         <div class="kpi-sub">Wallet (idle)</div>
@@ -280,7 +285,7 @@
 
     <!-- LP Position -->
     <div class="section">
-      <h2>LP Position</h2>
+      <h2>Liquidity Positions</h2>
       <div class="position-card">
         <div class="position-header">
           <span class="position-title">WETH-USDC <span style="color:var(--muted); font-weight:400;">0.05% fee</span></span>
@@ -292,20 +297,44 @@
             <div class="value">#4816034</div>
           </div>
           <div class="position-field">
+            <div class="label">Position Value</div>
+            <div class="value neutral" id="lp-value">--</div>
+          </div>
+          <div class="position-field">
+            <div class="label">WETH in Position</div>
+            <div class="value" id="lp-weth">--</div>
+          </div>
+          <div class="position-field">
+            <div class="label">USDC in Position</div>
+            <div class="value" id="lp-usdc">--</div>
+          </div>
+          <div class="position-field">
             <div class="label">Liquidity</div>
             <div class="value" id="lp-liquidity">--</div>
+          </div>
+          <div class="position-field">
+            <div class="label">Pool Price</div>
+            <div class="value" id="lp-pool-price">--</div>
           </div>
           <div class="position-field">
             <div class="label">Tick Range</div>
             <div class="value">Full Range</div>
           </div>
           <div class="position-field">
-            <div class="label">WETH Fees Owed</div>
+            <div class="label">WETH Fees Earned</div>
             <div class="value positive" id="lp-fees-weth">--</div>
           </div>
           <div class="position-field">
-            <div class="label">USDC Fees Owed</div>
+            <div class="label">USDC Fees Earned</div>
             <div class="value positive" id="lp-fees-usdc">--</div>
+          </div>
+          <div class="position-field">
+            <div class="label">Total Fees (USD)</div>
+            <div class="value positive" id="lp-fees-total">--</div>
+          </div>
+          <div class="position-field">
+            <div class="label">Current Tick</div>
+            <div class="value" id="lp-current-tick">--</div>
           </div>
           <div class="position-field">
             <div class="label">Mint Tx</div>
@@ -400,6 +429,7 @@
     const WETH = "0x4200000000000000000000000000000000000006";
     const USDC = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
     const PM   = "0x03a520b32C04BF3bEEf7BEb72E919cf822Ed34f1";
+    const POOL = "0xd0b53D9277642d899DF5C87A3966A349A798F224"; // WETH-USDC 500 fee
     // Aave aBasUSDC (aToken for USDC on Base)
     const AUSDC = "0x4e65fE4DbA92790696d040ac24Aa414708F5c0AB";
 
@@ -464,6 +494,52 @@
       };
     }
 
+    // Pool slot0() selector: 0x3850c7bd — returns sqrtPriceX96, tick, etc.
+    async function getPoolSlot0() {
+      const result = await rpcCall("eth_call", [{ to: POOL, data: "0x3850c7bd" }, "latest"]);
+      const hex = result.slice(2);
+      const sqrtPriceX96 = BigInt("0x" + hex.slice(0, 64));
+      // tick is int24 at offset 1
+      const tickRaw = BigInt("0x" + hex.slice(64, 128));
+      const tick = Number(BigInt.asIntN(24, tickRaw));
+      return { sqrtPriceX96, tick };
+    }
+
+    // Uniswap V3 math: calculate token amounts from liquidity + price
+    function calcPositionAmounts(liquidity, sqrtPriceX96, tickLower, tickUpper) {
+      const Q96 = 2n ** 96n;
+      const liq = BigInt(liquidity);
+
+      // sqrtPrice at tick boundaries
+      const sqrtA = tickToSqrtPrice(tickLower);
+      const sqrtB = tickToSqrtPrice(tickUpper);
+      const sqrtP = sqrtPriceX96;
+
+      let amount0 = 0n;
+      let amount1 = 0n;
+
+      if (sqrtP <= sqrtA) {
+        // All token0
+        amount0 = liq * Q96 * (sqrtB - sqrtA) / (sqrtA * sqrtB);
+      } else if (sqrtP >= sqrtB) {
+        // All token1
+        amount1 = liq * (sqrtB - sqrtA) / Q96;
+      } else {
+        // In range — split between both tokens
+        amount0 = liq * Q96 * (sqrtB - sqrtP) / (sqrtP * sqrtB);
+        amount1 = liq * (sqrtP - sqrtA) / Q96;
+      }
+
+      return { amount0, amount1 };
+    }
+
+    function tickToSqrtPrice(tick) {
+      // sqrtPrice = sqrt(1.0001^tick) * 2^96
+      // Use float approximation (sufficient for display)
+      const sqrtPrice = Math.sqrt(1.0001 ** tick);
+      return BigInt(Math.floor(sqrtPrice * 2 ** 96));
+    }
+
     // ── Formatters ────────────────────────────────────────────
     function fmtToken(raw, decimals, dp = 8) {
       const num = Number(raw) / 10 ** decimals;
@@ -500,7 +576,7 @@
         addLog("Fetching on-chain data...");
 
         // Parallel fetches
-        const [ethBal, wethBal, usdcBal, ausdcBal, wethAllow, usdcAllow, position, ethPriceData] =
+        const [ethBal, wethBal, usdcBal, ausdcBal, wethAllow, usdcAllow, position, poolSlot0, ethPriceData] =
           await Promise.all([
             rpcCall("eth_getBalance", [WALLET, "latest"]).then(r => BigInt(r)),
             getBalance(WETH, WALLET),
@@ -509,6 +585,7 @@
             getAllowance(WETH, WALLET, PM),
             getAllowance(USDC, WALLET, PM),
             getPosition(LP_TOKEN_ID),
+            getPoolSlot0(),
             fetch("https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd&include_24hr_change=true")
               .then(r => r.json()).catch(() => ({ ethereum: { usd: 2500, usd_24h_change: 0 } })),
           ]);
@@ -554,10 +631,27 @@
         document.getElementById("allow-weth-pm").textContent = fmtCompact(wethAllow);
         document.getElementById("allow-usdc-pm").textContent = fmtCompact(usdcAllow);
 
-        // LP Position
+        // LP Position — calculate token amounts from pool price
         const liqNum = Number(position.liquidity);
         const feesWeth = Number(position.tokensOwed0) / 1e18;
         const feesUsdc = Number(position.tokensOwed1) / 1e6;
+
+        let lpWethNum = 0, lpUsdcNum = 0, lpValueUsd = 0;
+        if (liqNum > 0) {
+          const { amount0, amount1 } = calcPositionAmounts(
+            position.liquidity, poolSlot0.sqrtPriceX96,
+            position.tickLower, position.tickUpper
+          );
+          lpWethNum = Number(amount0) / 1e18;
+          lpUsdcNum = Number(amount1) / 1e6;
+          lpValueUsd = lpWethNum * ethPrice + lpUsdcNum;
+        }
+
+        // Pool price from sqrtPriceX96 (token1/token0 = USDC/WETH)
+        const sqrtP = Number(poolSlot0.sqrtPriceX96) / 2 ** 96;
+        const poolPrice = sqrtP * sqrtP * (10 ** (WETH_DECIMALS - USDC_DECIMALS));
+
+        const feesTotalUsd = feesWeth * ethPrice + feesUsdc;
 
         document.getElementById("lp-status").textContent = liqNum > 0 ? "Active" : "Empty";
         document.getElementById("lp-status").style.background = liqNum > 0
@@ -565,17 +659,33 @@
         document.getElementById("lp-status").style.color = liqNum > 0
           ? "var(--green)" : "var(--red)";
 
+        document.getElementById("lp-value").textContent = fmtUsd(lpValueUsd);
+        document.getElementById("lp-weth").textContent = lpWethNum.toFixed(8) + " WETH";
+        document.getElementById("lp-usdc").textContent = "$" + lpUsdcNum.toFixed(4) + " USDC";
         document.getElementById("lp-liquidity").textContent = liqNum.toLocaleString();
+        document.getElementById("lp-pool-price").textContent = fmtUsd(poolPrice) + " / ETH";
+        document.getElementById("lp-current-tick").textContent = poolSlot0.tick.toLocaleString();
         document.getElementById("lp-fees-weth").textContent = feesWeth.toFixed(10) + " WETH";
         document.getElementById("lp-fees-usdc").textContent = "$" + feesUsdc.toFixed(6) + " USDC";
+        document.getElementById("lp-fees-total").textContent = fmtUsd(feesTotalUsd);
+
+        // LP KPI card
+        document.getElementById("lp-kpi-value").textContent = fmtUsd(lpValueUsd);
+        document.getElementById("lp-kpi-sub").textContent = `${lpWethNum.toFixed(6)} WETH + $${lpUsdcNum.toFixed(2)} USDC`;
+
+        // Total portfolio now includes LP value
+        const grandTotalUsd = totalUsd + lpValueUsd + feesTotalUsd;
+        document.getElementById("total-value").textContent = fmtUsd(grandTotalUsd);
+        document.getElementById("total-sub").textContent = `Wallet + Aave + LP (incl. fees)`;
 
         // Update timestamp
         document.getElementById("last-update").textContent = new Date().toLocaleTimeString();
 
-        addLog(`Portfolio: ${fmtUsd(totalUsd)} | ETH: ${fmtUsd(ethPrice)} | LP liq: ${liqNum.toLocaleString()}`);
+        addLog(`Portfolio: ${fmtUsd(grandTotalUsd)} (wallet: ${fmtUsd(totalUsd)}, LP: ${fmtUsd(lpValueUsd)}, fees: ${fmtUsd(feesTotalUsd)})`);
+        addLog(`LP #4816034: ${lpWethNum.toFixed(6)} WETH + $${lpUsdcNum.toFixed(4)} USDC @ ${fmtUsd(poolPrice)}/ETH`);
         addLog(`Balances: ${ethNum.toFixed(4)} ETH, ${wethNum.toFixed(6)} WETH, $${usdcNum.toFixed(2)} USDC, $${ausdcNum.toFixed(2)} aUSDC`);
         if (feesWeth > 0 || feesUsdc > 0) {
-          addLog(`LP fees pending: ${feesWeth.toFixed(10)} WETH + $${feesUsdc.toFixed(6)} USDC`);
+          addLog(`LP fees earned: ${feesWeth.toFixed(10)} WETH + $${feesUsdc.toFixed(6)} USDC (${fmtUsd(feesTotalUsd)})`);
         }
 
       } catch (err) {
