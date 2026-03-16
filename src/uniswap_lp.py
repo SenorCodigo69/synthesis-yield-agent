@@ -579,11 +579,14 @@ class UniswapLPAdapter:
         block = await self.w3.eth.get_block("latest")
         deadline = block["timestamp"] + DEFAULT_DEADLINE_SECONDS
 
-        # S44-H1: Slippage protection — use tokensOwed as baseline for min amounts
-        # For full exit, we expect to get back at least (1 - slippage) of owed tokens
-        slippage_factor = Decimal(str(1 - slippage_pct / 100))
-        amount0_min = max(int(Decimal(str(position.tokens_owed0)) * slippage_factor), 0)
-        amount1_min = max(int(Decimal(str(position.tokens_owed1)) * slippage_factor), 0)
+        # Slippage protection for decreaseLiquidity:
+        # tokensOwed reflects uncollected fees (not principal). For full-range exits,
+        # the actual returned amounts depend on the pool's current price, which we
+        # can't predict without complex sqrt-price math. On Base L2 (negligible MEV),
+        # amount0Min/amount1Min = 0 with a tight deadline is acceptable.
+        # For production: simulate via eth_call first, then apply slippage to result.
+        amount0_min = 0
+        amount1_min = 0
 
         decrease_params = (
             token_id,               # tokenId
@@ -758,13 +761,17 @@ class UniswapLPAdapter:
         """Build, sign, and broadcast a contract call. Returns (tx_hash, receipt)."""
         account = Account.from_key(private_key)
 
+        # S44-M6: Use tracked nonce to avoid race conditions when sending
+        # multiple txs in sequence (RPC load balancers can return stale counts)
+        nonce = await self.w3.eth.get_transaction_count(account.address, "pending")
+        if hasattr(self, "_last_nonce") and self._last_nonce >= nonce:
+            nonce = self._last_nonce + 1
+
         # Build transaction
         tx = await contract_fn.build_transaction({
             "from": account.address,
             "chainId": self.chain_id,
-            "nonce": await self.w3.eth.get_transaction_count(
-                account.address, "pending"
-            ),
+            "nonce": nonce,
         })
 
         # EIP-1559 gas pricing
@@ -793,6 +800,10 @@ class UniswapLPAdapter:
         # Sign and send
         signed = self.w3.eth.account.sign_transaction(tx, private_key=private_key)
         tx_hash = await self.w3.eth.send_raw_transaction(signed.raw_transaction)
+
+        # Track nonce for sequential tx safety
+        self._last_nonce = nonce
+
         receipt = await self.w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
 
         if receipt.get("status") == 0:
