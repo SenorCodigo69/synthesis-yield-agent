@@ -497,6 +497,134 @@ class UniswapLPAdapter:
             gas_used=receipt.get("gasUsed", 0),
         )
 
+    # ── Concentrated Mint ────────────────────────────────────
+
+    async def mint_concentrated(
+        self,
+        private_key: str,
+        weth_amount: int,
+        usdc_amount: int,
+        tick_lower: int,
+        tick_upper: int,
+        fee: int = DEFAULT_FEE,
+        slippage_pct: float = 0.5,
+    ) -> MintResult:
+        """Mint a concentrated LP position with specific tick bounds.
+
+        Unlike mint_full_range, this uses proper slippage protection since
+        concentrated positions are sensitive to price movements.
+
+        Args:
+            private_key: Wallet private key
+            weth_amount: WETH amount in raw units (18 decimals)
+            usdc_amount: USDC amount in raw units (6 decimals)
+            tick_lower: Lower tick bound (must be aligned to fee tier spacing)
+            tick_upper: Upper tick bound (must be aligned to fee tier spacing)
+            fee: Pool fee tier (default 500 = 0.05%)
+            slippage_pct: Slippage tolerance (default 0.5%)
+
+        Returns:
+            MintResult with token_id, liquidity, amounts used.
+        """
+        if weth_amount <= 0 and usdc_amount <= 0:
+            raise ValueError("Must provide at least one token amount")
+        if tick_lower >= tick_upper:
+            raise ValueError(f"tick_lower ({tick_lower}) must be < tick_upper ({tick_upper})")
+
+        spacing = FEE_TIERS.get(fee)
+        if spacing is None:
+            raise ValueError(f"Unknown fee tier: {fee}")
+        if tick_lower % spacing != 0 or tick_upper % spacing != 0:
+            raise ValueError(f"Ticks must be aligned to spacing {spacing}: got [{tick_lower}, {tick_upper}]")
+        if tick_lower < _MIN_TICK or tick_upper > _MAX_TICK:
+            raise ValueError(f"Ticks out of bounds: [{tick_lower}, {tick_upper}]")
+
+        account = Account.from_key(private_key)
+        wallet = account.address
+
+        # Slippage protection for concentrated positions
+        slippage_factor = 1 - slippage_pct / 100
+        amount0_min = int(weth_amount * slippage_factor)
+        amount1_min = int(usdc_amount * slippage_factor)
+
+        block = await self.w3.eth.get_block("latest")
+        deadline = block["timestamp"] + DEFAULT_DEADLINE_SECONDS
+
+        await self.approve_tokens(private_key, weth_amount, usdc_amount)
+
+        mint_params = (
+            self.w3.to_checksum_address(WETH_BASE),
+            self.w3.to_checksum_address(USDC_BASE),
+            fee,
+            tick_lower,
+            tick_upper,
+            weth_amount,
+            usdc_amount,
+            amount0_min,
+            amount1_min,
+            self.w3.to_checksum_address(wallet),
+            deadline,
+        )
+
+        logger.info(
+            "Minting concentrated LP: WETH=%s USDC=%s fee=%d ticks=[%d, %d] slippage=%.1f%%",
+            Decimal(str(weth_amount)) / Decimal(10**WETH_DECIMALS),
+            Decimal(str(usdc_amount)) / Decimal(10**USDC_DECIMALS),
+            fee, tick_lower, tick_upper, slippage_pct,
+        )
+
+        tx_hash, receipt = await self._build_sign_send_with_receipt(
+            self._pm.functions.mint(mint_params),
+            private_key,
+        )
+
+        token_id, liquidity, amount0, amount1 = self._parse_mint_receipt(receipt)
+
+        logger.info(
+            "Concentrated LP minted: tokenId=%d liquidity=%d WETH=%s USDC=%s ticks=[%d,%d] tx=%s",
+            token_id, liquidity,
+            Decimal(str(amount0)) / Decimal(10**WETH_DECIMALS),
+            Decimal(str(amount1)) / Decimal(10**USDC_DECIMALS),
+            tick_lower, tick_upper, tx_hash,
+        )
+
+        return MintResult(
+            token_id=token_id,
+            liquidity=liquidity,
+            amount0=amount0,
+            amount1=amount1,
+            tx_hash=tx_hash,
+            block_number=receipt["blockNumber"],
+            gas_used=receipt.get("gasUsed", 0),
+        )
+
+    # ── Pool Reads ─────────────────────────────────────────────
+
+    async def get_pool_slot0(self, fee: int = DEFAULT_FEE) -> tuple[int, int]:
+        """Read slot0 from the WETH-USDC pool.
+
+        Returns (sqrtPriceX96, current_tick).
+        """
+        # Known pool addresses for WETH-USDC on Base by fee tier
+        pool_addresses = {
+            500: "0xd0b53D9277642d899DF5C87A3966A349A798F224",
+        }
+        pool_addr = pool_addresses.get(fee)
+        if pool_addr is None:
+            raise ValueError(f"No known pool address for fee tier {fee}")
+
+        result = await self.w3.eth.call({
+            "to": self.w3.to_checksum_address(pool_addr),
+            "data": "0x3850c7bd",  # slot0()
+        })
+
+        sqrt_price_x96 = int.from_bytes(result[:32], "big")
+        tick_raw = int.from_bytes(result[32:64], "big")
+        # tick is int24 — handle sign extension
+        if tick_raw >= 2**23:
+            tick_raw -= 2**24
+        return sqrt_price_x96, tick_raw
+
     # ── Collect Fees ─────────────────────────────────────────
 
     async def collect_fees(

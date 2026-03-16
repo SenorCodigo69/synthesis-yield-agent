@@ -986,7 +986,7 @@ async def _pools(usdc_only: bool, max_pools: int):
 # ── lp (Uniswap V3 LP) ─────────────────────────────────────────────────
 
 @cli.command()
-@click.option("--action", type=click.Choice(["mint", "collect", "exit", "status"]),
+@click.option("--action", type=click.Choice(["mint", "collect", "exit", "status", "optimize", "concentrated-mint", "rebalance", "il-report"]),
               default="status", help="LP action to perform")
 @click.option("--weth", "weth_amount", default=None, type=float,
               help="WETH amount to provide (in WETH units)")
@@ -1196,6 +1196,197 @@ async def _lp(action: str, weth_amount: float | None, usdc_amount: float | None,
                 click.echo(f"    Would remove all liquidity, collect tokens + fees, burn NFT")
             except Exception as e:
                 click.echo(f"  Could not read position: {e}")
+
+    elif action == "optimize":
+        # Show recommended tick range based on quant signals
+        click.echo(f"  Action:           OPTIMIZE — compute ideal tick range")
+        click.echo()
+        try:
+            from src.lp_signals import compute_signals, read_pool_price
+            from src.lp_optimizer import compute_range as opt_range
+            from src import lp_tick_math as tm
+
+            # Read current pool state
+            sqrt_price, current_tick = await adapter.get_pool_slot0(fee)
+            current_price = tm.tick_to_eth_price(current_tick)
+            click.echo(f"  Pool price:       ${current_price:,.2f}")
+            click.echo(f"  Current tick:     {current_tick}")
+            click.echo()
+
+            # Compute signals (stores snapshot, builds candles from history)
+            signals = await compute_signals()
+            click.echo(f"  Signals:")
+            click.echo(f"    ATR:            ${signals.atr:,.2f} ({signals.atr_pct:.1%} of price)")
+            click.echo(f"    BB width:       {signals.bb_width_pct:.1%}")
+            click.echo(f"    RSI:            {signals.rsi:.1f}")
+            click.echo(f"    ADX:            {signals.adx:.1f}")
+            click.echo(f"    Regime:         {signals.regime} ({signals.regime_confidence:.0%} confidence)")
+            click.echo(f"    Trend:          {signals.trend_direction}")
+            click.echo()
+
+            # Compute optimal range
+            result = opt_range(signals, fee)
+            click.echo(f"  Recommended Range:")
+            click.echo(f"    Ticks:          [{result.tick_lower}, {result.tick_upper}]")
+            click.echo(f"    Prices:         ${result.price_lower:,.2f} – ${result.price_upper:,.2f}")
+            click.echo(f"    Width:          {result.width_pct:.1%}")
+            click.echo(f"    Reasoning:      {result.reasoning}")
+
+        except Exception as e:
+            click.echo(f"  Optimize failed: {e}")
+            import traceback
+            traceback.print_exc()
+
+    elif action == "concentrated-mint":
+        # Mint concentrated position with optimized tick range
+        if weth_amount is None and usdc_amount is None:
+            click.echo("  Error: Specify --weth and/or --usdc amounts")
+            return
+
+        click.echo(f"  Action:           CONCENTRATED MINT with AI-optimized range")
+        click.echo()
+
+        try:
+            from src.lp_signals import compute_signals
+            from src.lp_optimizer import compute_range as opt_range
+
+            signals = await compute_signals()
+            opt = opt_range(signals, fee)
+
+            weth_raw = int(Decimal(str(weth_amount or 0)) * Decimal(10**WETH_DECIMALS))
+            usdc_raw = int(Decimal(str(usdc_amount or 0)) * Decimal(10**USDC_DECIMALS))
+
+            click.echo(f"  Regime:           {opt.regime} ({opt.confidence:.0%})")
+            click.echo(f"  Tick range:       [{opt.tick_lower}, {opt.tick_upper}]")
+            click.echo(f"  Price range:      ${opt.price_lower:,.2f} – ${opt.price_upper:,.2f}")
+            click.echo(f"  Width:            {opt.width_pct:.1%}")
+            click.echo(f"  WETH deposit:     {weth_amount or 0}")
+            click.echo(f"  USDC deposit:     {usdc_amount or 0}")
+            click.echo(f"  Slippage:         {slippage}%")
+            click.echo(f"  Reasoning:        {opt.reasoning}")
+            click.echo()
+
+            if is_live:
+                result = await adapter.mint_concentrated(
+                    private_key=private_key,
+                    weth_amount=weth_raw,
+                    usdc_amount=usdc_raw,
+                    tick_lower=opt.tick_lower,
+                    tick_upper=opt.tick_upper,
+                    fee=fee,
+                    slippage_pct=slippage,
+                )
+                click.echo(f"  Concentrated LP Minted!")
+                click.echo(f"    Token ID:    {result.token_id}")
+                click.echo(f"    Liquidity:   {result.liquidity}")
+                weth_used = Decimal(str(result.amount0)) / Decimal(10**WETH_DECIMALS)
+                usdc_used = Decimal(str(result.amount1)) / Decimal(10**USDC_DECIMALS)
+                click.echo(f"    WETH used:   {weth_used:.8f}")
+                click.echo(f"    USDC used:   ${usdc_used:,.6f}")
+                click.echo(f"    Tx hash:     {result.tx_hash}")
+            else:
+                click.echo(f"  [DRY RUN — add --live to execute on-chain]")
+        except Exception as e:
+            click.echo(f"  Concentrated mint failed: {e}")
+
+    elif action == "rebalance":
+        # Check if current position needs rebalancing
+        if token_id is None:
+            click.echo("  Error: Specify --token-id for the position to check")
+            return
+
+        click.echo(f"  Action:           REBALANCE CHECK for position #{token_id}")
+        click.echo()
+
+        try:
+            from src.lp_signals import compute_signals
+            from src.lp_rebalancer import check_rebalance
+
+            pos = await adapter.get_position(token_id)
+            _, current_tick = await adapter.get_pool_slot0(fee)
+            signals = await compute_signals()
+
+            decision = check_rebalance(
+                current_tick=current_tick,
+                tick_lower=pos.tick_lower,
+                tick_upper=pos.tick_upper,
+                entry_regime=None,
+                last_rebalance_ts=None,
+                signals=signals,
+            )
+
+            click.echo(f"  Current tick:     {current_tick}")
+            click.echo(f"  Position range:   [{pos.tick_lower}, {pos.tick_upper}]")
+            click.echo(f"  Regime:           {signals.regime} ({signals.regime_confidence:.0%})")
+            click.echo(f"  Urgency:          {decision.urgency}")
+            click.echo(f"  Reason:           {decision.reason}")
+            click.echo(f"  Should rebalance: {'YES' if decision.should_rebalance else 'NO'}")
+
+            if decision.new_range:
+                click.echo()
+                click.echo(f"  Suggested new range:")
+                click.echo(f"    Ticks:          [{decision.new_range.tick_lower}, {decision.new_range.tick_upper}]")
+                click.echo(f"    Prices:         ${decision.new_range.price_lower:,.2f} – ${decision.new_range.price_upper:,.2f}")
+                click.echo(f"    Width:          {decision.new_range.width_pct:.1%}")
+
+        except Exception as e:
+            click.echo(f"  Rebalance check failed: {e}")
+
+    elif action == "il-report":
+        # Show IL report for a position
+        if token_id is None:
+            click.echo("  Error: Specify --token-id")
+            return
+
+        click.echo(f"  Action:           IL REPORT for position #{token_id}")
+        click.echo()
+
+        try:
+            from src.lp_signals import read_pool_price
+            from src.lp_il_tracker import compute_il_report
+            from src import lp_tick_math as tm
+
+            pos = await adapter.get_position(token_id)
+            current_price = await read_pool_price()
+
+            # Estimate position value from pool price + position amounts
+            price_lower = tm.tick_to_eth_price(pos.tick_lower)
+            price_upper = tm.tick_to_eth_price(pos.tick_upper)
+            # Use tokens_owed as proxy for fees (simplified)
+            fees_weth = pos.tokens_owed0 / 10**WETH_DECIMALS
+            fees_usdc = pos.tokens_owed1 / 10**USDC_DECIMALS
+
+            # Entry price unknown without DB — use midpoint of range as estimate
+            entry_price = (price_lower + price_upper) / 2
+
+            # Rough position value (would need sqrtPriceX96 math for exact)
+            position_value_usd = 10.0  # Placeholder — needs on-chain calc
+
+            report = compute_il_report(
+                token_id=token_id,
+                entry_price=entry_price,
+                current_price=current_price,
+                tick_lower=pos.tick_lower,
+                tick_upper=pos.tick_upper,
+                fees_weth=fees_weth,
+                fees_usdc=fees_usdc,
+                position_value_usd=position_value_usd,
+            )
+
+            click.echo(f"  Current ETH:      ${report.current_price_eth:,.2f}")
+            click.echo(f"  Entry ETH (est):  ${report.entry_price_eth:,.2f}")
+            click.echo(f"  Range:            ${report.price_lower:,.2f} – ${report.price_upper:,.2f}")
+            click.echo(f"  IL:               {report.il_pct:.2%}")
+            click.echo(f"  Fees earned:      ${report.fees_earned_usd:,.4f}")
+            click.echo(f"  Net P&L:          ${report.net_pnl_usd:,.4f}")
+            click.echo(f"  Profitable:       {'YES' if report.is_profitable else 'NO'}")
+
+        except Exception as e:
+            click.echo(f"  IL report failed: {e}")
+
+    else:
+        click.echo(f"  Unknown action: {action}")
+        click.echo(f"  Valid: status, mint, collect, exit, optimize, concentrated-mint, rebalance, il-report")
 
     click.echo()
 
