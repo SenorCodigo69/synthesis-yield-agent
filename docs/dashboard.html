@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Yield Agent — Live Dashboard</title>
+  <style>
+    :root {
+      --bg: #0a0a0f;
+      --surface: #12121a;
+      --border: #1e1e2e;
+      --text: #e0e0e8;
+      --muted: #8888a0;
+      --accent: #6c5ce7;
+      --accent2: #00cec9;
+      --green: #00b894;
+      --red: #d63031;
+      --orange: #fdcb6e;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .container { max-width: 960px; margin: 0 auto; padding: 0 24px; }
+
+    /* Header */
+    header {
+      padding: 32px 0 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--border);
+    }
+
+    header h1 { font-size: 1.2rem; }
+    header h1 span { color: var(--accent); }
+
+    .status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.8rem;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--green);
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    .refresh-info {
+      color: var(--muted);
+      font-size: 0.7rem;
+    }
+
+    /* KPI Grid */
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+      padding: 24px 0;
+    }
+
+    .kpi {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 16px;
+    }
+
+    .kpi-label {
+      font-size: 0.65rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .kpi-value {
+      font-size: 1.3rem;
+      font-weight: 700;
+      margin-top: 4px;
+    }
+
+    .kpi-sub {
+      font-size: 0.7rem;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    .positive { color: var(--green); }
+    .negative { color: var(--red); }
+    .neutral { color: var(--accent2); }
+
+    /* Sections */
+    .section {
+      padding: 24px 0;
+      border-top: 1px solid var(--border);
+    }
+
+    .section h2 {
+      font-size: 1rem;
+      margin-bottom: 16px;
+      color: var(--accent2);
+    }
+
+    /* LP Position */
+    .position-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 20px;
+    }
+
+    .position-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+
+    .position-title {
+      font-weight: 700;
+      font-size: 1rem;
+    }
+
+    .position-badge {
+      font-size: 0.7rem;
+      padding: 2px 8px;
+      border-radius: 3px;
+      background: rgba(0,184,148,0.15);
+      color: var(--green);
+      border: 1px solid rgba(0,184,148,0.3);
+    }
+
+    .position-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 12px;
+    }
+
+    .position-field .label {
+      font-size: 0.65rem;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+
+    .position-field .value {
+      font-size: 0.9rem;
+      font-weight: 600;
+      margin-top: 2px;
+    }
+
+    /* Balances Table */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+    }
+
+    th, td {
+      text-align: left;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    th {
+      color: var(--muted);
+      font-weight: 600;
+      text-transform: uppercase;
+      font-size: 0.7rem;
+      letter-spacing: 0.5px;
+    }
+
+    td.mono {
+      font-family: 'SF Mono', monospace;
+      color: var(--accent2);
+    }
+
+    /* Activity Log */
+    .log {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 16px;
+      max-height: 300px;
+      overflow-y: auto;
+      font-size: 0.8rem;
+    }
+
+    .log-entry {
+      padding: 6px 0;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      gap: 12px;
+    }
+
+    .log-entry:last-child { border-bottom: none; }
+    .log-time { color: var(--muted); min-width: 70px; }
+    .log-msg { color: var(--text); }
+
+    /* Footer */
+    footer {
+      padding: 24px 0;
+      border-top: 1px solid var(--border);
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.75rem;
+    }
+
+    .loading { color: var(--muted); font-style: italic; }
+
+    /* Links */
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div class="container">
+
+    <header>
+      <h1>Yield Agent <span>Dashboard</span></h1>
+      <div>
+        <div class="status">
+          <div class="dot"></div>
+          <span>Base Mainnet</span>
+        </div>
+        <div class="refresh-info">Auto-refresh: <span id="countdown">30</span>s | Last: <span id="last-update">--</span></div>
+      </div>
+    </header>
+
+    <!-- KPI Cards -->
+    <div class="kpi-grid">
+      <div class="kpi">
+        <div class="kpi-label">Total Portfolio</div>
+        <div class="kpi-value neutral" id="total-value">--</div>
+        <div class="kpi-sub" id="total-sub"></div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">USDC Balance</div>
+        <div class="kpi-value" id="usdc-balance">--</div>
+        <div class="kpi-sub">Wallet (idle)</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">WETH Balance</div>
+        <div class="kpi-value" id="weth-balance">--</div>
+        <div class="kpi-sub" id="weth-usd">--</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">ETH (Gas)</div>
+        <div class="kpi-value" id="eth-balance">--</div>
+        <div class="kpi-sub" id="eth-usd">--</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">ETH Price</div>
+        <div class="kpi-value neutral" id="eth-price">--</div>
+        <div class="kpi-sub" id="eth-change">--</div>
+      </div>
+    </div>
+
+    <!-- LP Position -->
+    <div class="section">
+      <h2>LP Position</h2>
+      <div class="position-card">
+        <div class="position-header">
+          <span class="position-title">WETH-USDC <span style="color:var(--muted); font-weight:400;">0.05% fee</span></span>
+          <span class="position-badge" id="lp-status">Loading...</span>
+        </div>
+        <div class="position-grid">
+          <div class="position-field">
+            <div class="label">Token ID</div>
+            <div class="value">#4816034</div>
+          </div>
+          <div class="position-field">
+            <div class="label">Liquidity</div>
+            <div class="value" id="lp-liquidity">--</div>
+          </div>
+          <div class="position-field">
+            <div class="label">Tick Range</div>
+            <div class="value">Full Range</div>
+          </div>
+          <div class="position-field">
+            <div class="label">WETH Fees Owed</div>
+            <div class="value positive" id="lp-fees-weth">--</div>
+          </div>
+          <div class="position-field">
+            <div class="label">USDC Fees Owed</div>
+            <div class="value positive" id="lp-fees-usdc">--</div>
+          </div>
+          <div class="position-field">
+            <div class="label">Mint Tx</div>
+            <div class="value"><a href="https://basescan.org/tx/0x83c7071962e5a2267ad95fa0afad585720f221516bf56e00abde81c45341793a" target="_blank" style="font-size:0.75rem;">View on BaseScan</a></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Token Balances -->
+    <div class="section">
+      <h2>Token Balances</h2>
+      <table>
+        <thead>
+          <tr><th>Token</th><th>Balance</th><th>USD Value</th><th>Contract</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>ETH (native)</td>
+            <td class="mono" id="bal-eth">--</td>
+            <td id="bal-eth-usd">--</td>
+            <td style="color:var(--muted);font-size:0.75rem;">Native</td>
+          </tr>
+          <tr>
+            <td>WETH</td>
+            <td class="mono" id="bal-weth">--</td>
+            <td id="bal-weth-usd">--</td>
+            <td style="color:var(--muted);font-size:0.75rem;">0x4200...0006</td>
+          </tr>
+          <tr>
+            <td>USDC</td>
+            <td class="mono" id="bal-usdc">--</td>
+            <td id="bal-usdc-usd">--</td>
+            <td style="color:var(--muted);font-size:0.75rem;">0x8335...2913</td>
+          </tr>
+          <tr>
+            <td>aBasUSDC (Aave)</td>
+            <td class="mono" id="bal-ausdc">--</td>
+            <td id="bal-ausdc-usd">--</td>
+            <td style="color:var(--muted);font-size:0.75rem;">0x4e65...8b13</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Allowances -->
+    <div class="section">
+      <h2>Protocol Approvals</h2>
+      <table>
+        <thead>
+          <tr><th>Token</th><th>Spender</th><th>Allowance</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>WETH</td>
+            <td>NonfungiblePositionManager</td>
+            <td id="allow-weth-pm" class="mono">--</td>
+          </tr>
+          <tr>
+            <td>USDC</td>
+            <td>NonfungiblePositionManager</td>
+            <td id="allow-usdc-pm" class="mono">--</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Activity Log -->
+    <div class="section">
+      <h2>Activity Log</h2>
+      <div class="log" id="activity-log">
+        <div class="log-entry">
+          <span class="log-time">--:--</span>
+          <span class="log-msg loading">Fetching on-chain data...</span>
+        </div>
+      </div>
+    </div>
+
+    <footer>
+      <p>Wallet: <a href="https://basescan.org/address/0x8d691720bF8C81044DB1a77b82D0eF5f5bffdE6C" target="_blank">0x8d691720bF8C81044DB1a77b82D0eF5f5bffdE6C</a></p>
+      <p style="margin-top:4px;">Chain: Base (8453) | <a href="index.html">Landing Page</a> | <a href="https://github.com/SenorCodigo69/synthesis-yield-agent" target="_blank">GitHub</a></p>
+    </footer>
+
+  </div>
+
+  <script>
+    // ── Constants ──────────────────────────────────────────────
+    const RPC = "https://mainnet.base.org";
+    const WALLET = "0x8d691720bF8C81044DB1a77b82D0eF5f5bffdE6C";
+    const LP_TOKEN_ID = 4816034;
+
+    const WETH = "0x4200000000000000000000000000000000000006";
+    const USDC = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
+    const PM   = "0x03a520b32C04BF3bEEf7BEb72E919cf822Ed34f1";
+    // Aave aBasUSDC (aToken for USDC on Base)
+    const AUSDC = "0x4e65fE4DbA92790696d040ac24Aa414708F5c0AB";
+
+    const WETH_DECIMALS = 18;
+    const USDC_DECIMALS = 6;
+
+    const REFRESH_INTERVAL = 30; // seconds
+    let countdown = REFRESH_INTERVAL;
+    let logs = [];
+
+    // ── RPC Helper ────────────────────────────────────────────
+    let rpcId = 1;
+    async function rpcCall(method, params = []) {
+      const res = await fetch(RPC, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", method, params, id: rpcId++ }),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error.message);
+      return data.result;
+    }
+
+    // ERC20 balanceOf(address) selector: 0x70a08231
+    async function getBalance(token, wallet) {
+      const paddedAddr = wallet.slice(2).padStart(64, "0");
+      const data = "0x70a08231" + paddedAddr;
+      const result = await rpcCall("eth_call", [{ to: token, data }, "latest"]);
+      return BigInt(result);
+    }
+
+    // ERC20 allowance(owner, spender) selector: 0xdd62ed3e
+    async function getAllowance(token, owner, spender) {
+      const paddedOwner = owner.slice(2).padStart(64, "0");
+      const paddedSpender = spender.slice(2).padStart(64, "0");
+      const data = "0xdd62ed3e" + paddedOwner + paddedSpender;
+      const result = await rpcCall("eth_call", [{ to: token, data }, "latest"]);
+      return BigInt(result);
+    }
+
+    // NonfungiblePositionManager positions(uint256) selector: 0x99fbab88
+    async function getPosition(tokenId) {
+      const paddedId = tokenId.toString(16).padStart(64, "0");
+      const data = "0x99fbab88" + paddedId;
+      const result = await rpcCall("eth_call", [{ to: PM, data }, "latest"]);
+      // Decode: 12 fields, each 32 bytes
+      const hex = result.slice(2);
+      const field = (i) => BigInt("0x" + hex.slice(i * 64, (i + 1) * 64));
+      return {
+        nonce: field(0),
+        operator: "0x" + hex.slice(1 * 64 + 24, 2 * 64),
+        token0: "0x" + hex.slice(2 * 64 + 24, 3 * 64),
+        token1: "0x" + hex.slice(3 * 64 + 24, 4 * 64),
+        fee: Number(field(4)),
+        tickLower: Number(BigInt.asIntN(24, field(5))),
+        tickUpper: Number(BigInt.asIntN(24, field(6))),
+        liquidity: field(7),
+        feeGrowthInside0: field(8),
+        feeGrowthInside1: field(9),
+        tokensOwed0: field(10),
+        tokensOwed1: field(11),
+      };
+    }
+
+    // ── Formatters ────────────────────────────────────────────
+    function fmtToken(raw, decimals, dp = 8) {
+      const num = Number(raw) / 10 ** decimals;
+      return num.toFixed(dp);
+    }
+
+    function fmtUsd(num) {
+      return "$" + num.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    function fmtCompact(raw) {
+      if (raw > 10n ** 50n) return "MAX";
+      return Number(raw).toLocaleString();
+    }
+
+    function addLog(msg) {
+      const now = new Date();
+      const time = now.toTimeString().slice(0, 5);
+      logs.unshift({ time, msg });
+      if (logs.length > 50) logs.pop();
+      renderLogs();
+    }
+
+    function renderLogs() {
+      const el = document.getElementById("activity-log");
+      el.innerHTML = logs.map(l =>
+        `<div class="log-entry"><span class="log-time">${l.time}</span><span class="log-msg">${l.msg}</span></div>`
+      ).join("");
+    }
+
+    // ── Main Fetch ────────────────────────────────────────────
+    async function refresh() {
+      try {
+        addLog("Fetching on-chain data...");
+
+        // Parallel fetches
+        const [ethBal, wethBal, usdcBal, ausdcBal, wethAllow, usdcAllow, position, ethPriceData] =
+          await Promise.all([
+            rpcCall("eth_getBalance", [WALLET, "latest"]).then(r => BigInt(r)),
+            getBalance(WETH, WALLET),
+            getBalance(USDC, WALLET),
+            getBalance(AUSDC, WALLET).catch(() => 0n),
+            getAllowance(WETH, WALLET, PM),
+            getAllowance(USDC, WALLET, PM),
+            getPosition(LP_TOKEN_ID),
+            fetch("https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd&include_24hr_change=true")
+              .then(r => r.json()).catch(() => ({ ethereum: { usd: 2500, usd_24h_change: 0 } })),
+          ]);
+
+        const ethPrice = ethPriceData.ethereum.usd;
+        const ethChange = ethPriceData.ethereum.usd_24h_change || 0;
+
+        // Format values
+        const ethNum = Number(ethBal) / 1e18;
+        const wethNum = Number(wethBal) / 1e18;
+        const usdcNum = Number(usdcBal) / 1e6;
+        const ausdcNum = Number(ausdcBal) / 1e6;
+
+        const ethUsd = ethNum * ethPrice;
+        const wethUsd = wethNum * ethPrice;
+        const totalUsd = ethUsd + wethUsd + usdcNum + ausdcNum;
+
+        // KPI Cards
+        document.getElementById("total-value").textContent = fmtUsd(totalUsd);
+        document.getElementById("total-sub").textContent = `Wallet + Aave (excl. LP)`;
+        document.getElementById("usdc-balance").textContent = fmtUsd(usdcNum);
+        document.getElementById("weth-balance").textContent = wethNum.toFixed(8);
+        document.getElementById("weth-usd").textContent = fmtUsd(wethUsd);
+        document.getElementById("eth-balance").textContent = ethNum.toFixed(6);
+        document.getElementById("eth-usd").textContent = fmtUsd(ethUsd);
+        document.getElementById("eth-price").textContent = fmtUsd(ethPrice);
+
+        const changeEl = document.getElementById("eth-change");
+        changeEl.textContent = `${ethChange >= 0 ? "+" : ""}${ethChange.toFixed(2)}% (24h)`;
+        changeEl.className = ethChange >= 0 ? "kpi-sub positive" : "kpi-sub negative";
+
+        // Token Balances Table
+        document.getElementById("bal-eth").textContent = ethNum.toFixed(6);
+        document.getElementById("bal-eth-usd").textContent = fmtUsd(ethUsd);
+        document.getElementById("bal-weth").textContent = wethNum.toFixed(8);
+        document.getElementById("bal-weth-usd").textContent = fmtUsd(wethUsd);
+        document.getElementById("bal-usdc").textContent = usdcNum.toFixed(6);
+        document.getElementById("bal-usdc-usd").textContent = fmtUsd(usdcNum);
+        document.getElementById("bal-ausdc").textContent = ausdcNum.toFixed(6);
+        document.getElementById("bal-ausdc-usd").textContent = fmtUsd(ausdcNum);
+
+        // Allowances
+        document.getElementById("allow-weth-pm").textContent = fmtCompact(wethAllow);
+        document.getElementById("allow-usdc-pm").textContent = fmtCompact(usdcAllow);
+
+        // LP Position
+        const liqNum = Number(position.liquidity);
+        const feesWeth = Number(position.tokensOwed0) / 1e18;
+        const feesUsdc = Number(position.tokensOwed1) / 1e6;
+
+        document.getElementById("lp-status").textContent = liqNum > 0 ? "Active" : "Empty";
+        document.getElementById("lp-status").style.background = liqNum > 0
+          ? "rgba(0,184,148,0.15)" : "rgba(214,48,49,0.15)";
+        document.getElementById("lp-status").style.color = liqNum > 0
+          ? "var(--green)" : "var(--red)";
+
+        document.getElementById("lp-liquidity").textContent = liqNum.toLocaleString();
+        document.getElementById("lp-fees-weth").textContent = feesWeth.toFixed(10) + " WETH";
+        document.getElementById("lp-fees-usdc").textContent = "$" + feesUsdc.toFixed(6) + " USDC";
+
+        // Update timestamp
+        document.getElementById("last-update").textContent = new Date().toLocaleTimeString();
+
+        addLog(`Portfolio: ${fmtUsd(totalUsd)} | ETH: ${fmtUsd(ethPrice)} | LP liq: ${liqNum.toLocaleString()}`);
+        addLog(`Balances: ${ethNum.toFixed(4)} ETH, ${wethNum.toFixed(6)} WETH, $${usdcNum.toFixed(2)} USDC, $${ausdcNum.toFixed(2)} aUSDC`);
+        if (feesWeth > 0 || feesUsdc > 0) {
+          addLog(`LP fees pending: ${feesWeth.toFixed(10)} WETH + $${feesUsdc.toFixed(6)} USDC`);
+        }
+
+      } catch (err) {
+        addLog(`Error: ${err.message}`);
+        console.error(err);
+      }
+    }
+
+    // ── Countdown + Auto-Refresh ──────────────────────────────
+    function tick() {
+      countdown--;
+      document.getElementById("countdown").textContent = countdown;
+      if (countdown <= 0) {
+        countdown = REFRESH_INTERVAL;
+        refresh();
+      }
+    }
+
+    // Initial load
+    refresh();
+    setInterval(tick, 1000);
+  </script>
+</body>
+</html>
