@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Synthesis Yield Agent — Autonomous DeFi with ZK Privacy</title>
+  <style>
+    :root {
+      --bg: #0a0a0f;
+      --surface: #12121a;
+      --border: #1e1e2e;
+      --text: #e0e0e8;
+      --muted: #8888a0;
+      --accent: #6c5ce7;
+      --accent2: #00cec9;
+      --green: #00b894;
+      --orange: #fdcb6e;
+      --red: #d63031;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    /* Hero */
+    .hero {
+      padding: 80px 0 60px;
+      text-align: center;
+    }
+
+    .hero h1 {
+      font-size: 2.4rem;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      margin-bottom: 12px;
+    }
+
+    .hero h1 span { color: var(--accent); }
+
+    .hero .tagline {
+      font-size: 1.1rem;
+      color: var(--muted);
+      margin-bottom: 24px;
+    }
+
+    .badges {
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+      flex-wrap: wrap;
+      margin-bottom: 32px;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .badge.live { background: rgba(0,184,148,0.15); color: var(--green); border: 1px solid rgba(0,184,148,0.3); }
+    .badge.zk { background: rgba(108,92,231,0.15); color: var(--accent); border: 1px solid rgba(108,92,231,0.3); }
+    .badge.uni { background: rgba(253,203,110,0.15); color: var(--orange); border: 1px solid rgba(253,203,110,0.3); }
+
+    /* Sections */
+    section {
+      padding: 48px 0;
+      border-top: 1px solid var(--border);
+    }
+
+    section h2 {
+      font-size: 1.3rem;
+      margin-bottom: 24px;
+      color: var(--accent2);
+    }
+
+    /* Pipeline */
+    .pipeline {
+      display: grid;
+      gap: 2px;
+    }
+
+    .step {
+      background: var(--surface);
+      padding: 16px 20px;
+      display: flex;
+      align-items: flex-start;
+      gap: 16px;
+      border-left: 3px solid var(--border);
+      transition: border-color 0.2s;
+    }
+
+    .step:hover { border-left-color: var(--accent); }
+
+    .step-num {
+      color: var(--accent);
+      font-weight: 700;
+      font-size: 0.85rem;
+      min-width: 24px;
+    }
+
+    .step-title {
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .step-desc {
+      color: var(--muted);
+      font-size: 0.85rem;
+      margin-top: 4px;
+    }
+
+    /* Stats Grid */
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+    }
+
+    .stat {
+      background: var(--surface);
+      padding: 20px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+    }
+
+    .stat-value {
+      font-size: 1.4rem;
+      font-weight: 700;
+      color: var(--accent2);
+    }
+
+    .stat-label {
+      font-size: 0.75rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-top: 4px;
+    }
+
+    /* Contracts Table */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+    }
+
+    th, td {
+      text-align: left;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    th {
+      color: var(--muted);
+      font-weight: 600;
+      text-transform: uppercase;
+      font-size: 0.7rem;
+      letter-spacing: 0.5px;
+    }
+
+    td.addr {
+      font-size: 0.75rem;
+      color: var(--accent2);
+      word-break: break-all;
+    }
+
+    /* Architecture */
+    .arch {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 32px 24px;
+      text-align: center;
+      font-size: 0.9rem;
+      line-height: 2;
+    }
+
+    .arch .flow {
+      color: var(--accent);
+      font-weight: 700;
+    }
+
+    .arch .arrow {
+      color: var(--muted);
+      margin: 0 4px;
+    }
+
+    .arch .layer {
+      margin: 16px 0;
+      padding: 12px;
+      border: 1px dashed var(--border);
+      border-radius: 4px;
+    }
+
+    .arch .layer-label {
+      font-size: 0.7rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 8px;
+    }
+
+    /* Code Block */
+    .code {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 20px;
+      overflow-x: auto;
+      font-size: 0.85rem;
+      line-height: 1.8;
+    }
+
+    .code .comment { color: var(--muted); }
+    .code .cmd { color: var(--accent2); }
+
+    /* Links */
+    a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    a:hover { text-decoration: underline; }
+
+    .links {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 16px;
+    }
+
+    .link-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 20px;
+      transition: border-color 0.2s;
+    }
+
+    .link-card:hover { border-color: var(--accent); }
+
+    .link-card h3 {
+      font-size: 0.9rem;
+      margin-bottom: 8px;
+    }
+
+    .link-card p {
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+
+    /* Safety */
+    .guardrails {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 12px;
+    }
+
+    .guardrail {
+      padding: 12px 16px;
+      background: var(--surface);
+      border-left: 3px solid var(--green);
+      font-size: 0.85rem;
+    }
+
+    /* Footer */
+    footer {
+      padding: 48px 0;
+      border-top: 1px solid var(--border);
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.8rem;
+    }
+
+    footer .hackathon {
+      font-size: 0.9rem;
+      color: var(--text);
+      margin-bottom: 8px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+
+    <!-- Hero -->
+    <div class="hero">
+      <h1>Synthesis <span>Yield Agent</span></h1>
+      <p class="tagline">Autonomous DeFi agent with ZK privacy on Base</p>
+      <div class="badges">
+        <span class="badge live">Live on Base Mainnet</span>
+        <span class="badge zk">ZK Privacy (Groth16)</span>
+        <span class="badge uni">Uniswap V3 LP + V4 Hooks</span>
+      </div>
+      <p style="color: var(--muted); font-size: 0.85rem;">
+        Two AI agents, one pipeline. The Yield Agent decides <em>what</em> to do.
+        The ZK Agent proves it's <em>authorized</em> to do it. No human in the loop.
+      </p>
+    </div>
+
+    <!-- Architecture -->
+    <section>
+      <h2>Architecture</h2>
+      <div class="arch">
+        <div class="layer">
+          <div class="layer-label">AI Decision Layer</div>
+          <span class="flow">Claude Haiku</span>
+          <span class="arrow">&rarr;</span>
+          analyzes yields, balances, gas
+          <span class="arrow">&rarr;</span>
+          <span class="flow">recommends action</span>
+        </div>
+        <div class="layer">
+          <div class="layer-label">ZK Privacy Layer</div>
+          <span class="flow">3 Groth16 proofs</span>
+          <span class="arrow">&rarr;</span>
+          authorization + budget + cumulative spend
+          <span class="arrow">&rarr;</span>
+          <span class="flow">hookData</span>
+        </div>
+        <div class="layer">
+          <div class="layer-label">Execution Layer (Base Mainnet)</div>
+          <span class="flow">Uniswap V4 Hook</span>
+          <span class="arrow">&rarr;</span>
+          verifies ZK proof on-chain
+          <span class="arrow">&rarr;</span>
+          <span class="flow">swap</span>
+          <span class="arrow">&rarr;</span>
+          <span class="flow">LP / Aave</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Pipeline -->
+    <section>
+      <h2>7-Step Pipeline</h2>
+      <div class="pipeline">
+        <div class="step">
+          <span class="step-num">01</span>
+          <div>
+            <div class="step-title">OBSERVE</div>
+            <div class="step-desc">Scan DeFi yield rates (Aave, Morpho, Compound) + wallet balances + Uniswap LP pools via DeFi Llama + on-chain validation</div>
+          </div>
+        </div>
+        <div class="step">
+          <span class="step-num">02</span>
+          <div>
+            <div class="step-title">THINK</div>
+            <div class="step-desc">Claude Haiku analyzes rates, balances, gas costs, and LP yields — recommends swap, deposit, LP, or hold</div>
+          </div>
+        </div>
+        <div class="step">
+          <span class="step-num">03</span>
+          <div>
+            <div class="step-title">PROVE</div>
+            <div class="step-desc">Generate 3 Groth16 ZK proofs: agent authorization (EdDSA), budget range, cumulative spend — all without revealing private data</div>
+          </div>
+        </div>
+        <div class="step">
+          <span class="step-num">04</span>
+          <div>
+            <div class="step-title">GATE</div>
+            <div class="step-desc">Encode authorization proof as Uniswap V4 hookData. The ZKGatedHook verifies the proof before allowing the swap</div>
+          </div>
+        </div>
+        <div class="step">
+          <span class="step-num">05</span>
+          <div>
+            <div class="step-title">SWAP</div>
+            <div class="step-desc">Execute token swap via Uniswap Trading API with Permit2 signing, optimal routing, and slippage protection</div>
+          </div>
+        </div>
+        <div class="step">
+          <span class="step-num">06</span>
+          <div>
+            <div class="step-title">EARN</div>
+            <div class="step-desc">Deposit into highest-yield protocol (Aave V3) or mint Uniswap V3 full-range LP position for swap fee yield</div>
+          </div>
+        </div>
+        <div class="step">
+          <span class="step-num">07</span>
+          <div>
+            <div class="step-title">DISCLOSE</div>
+            <div class="step-desc">Generate selective ZK disclosure proofs for auditors — prove compliance without revealing transaction amounts or wallet identity</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Live Stats -->
+    <section>
+      <h2>Live on Base Mainnet</h2>
+      <div class="stats">
+        <div class="stat">
+          <div class="stat-value">5</div>
+          <div class="stat-label">Smart Contracts Deployed</div>
+        </div>
+        <div class="stat">
+          <div class="stat-value">2</div>
+          <div class="stat-label">ERC-8004 Agent IDs</div>
+        </div>
+        <div class="stat">
+          <div class="stat-value">281+</div>
+          <div class="stat-label">Tests Passing</div>
+        </div>
+        <div class="stat">
+          <div class="stat-value">13</div>
+          <div class="stat-label">Security Audits</div>
+        </div>
+        <div class="stat">
+          <div class="stat-value">#4816034</div>
+          <div class="stat-label">Live LP Position (WETH-USDC)</div>
+        </div>
+        <div class="stat">
+          <div class="stat-value">3</div>
+          <div class="stat-label">Live Uniswap Swaps</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- On-Chain Artifacts -->
+    <section>
+      <h2>On-Chain Artifacts</h2>
+      <p style="color: var(--muted); font-size: 0.85rem; margin-bottom: 16px;">
+        Wallet: <code style="color: var(--accent2);">0x8d691720bF8C81044DB1a77b82D0eF5f5bffdE6C</code>
+      </p>
+      <table>
+        <thead>
+          <tr><th>Contract</th><th>Address</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>ZKGatedHook (V4)</td><td class="addr">0x45eC09fB08B83f104F15f3709F4677736112c080</td></tr>
+          <tr><td>AuthorizationVerifier</td><td class="addr">0x2a8FBE80BDc9cb907b20acBE84F13a858CBEdAe4</td></tr>
+          <tr><td>BudgetRangeVerifier</td><td class="addr">0x8d7520a34f3EFbB86d02232C4fc31dB9415142d3</td></tr>
+          <tr><td>CumulativeSpendVerifier</td><td class="addr">0x1c7A42fea03ec0C86c94B886588a2680184428D9</td></tr>
+          <tr><td>PolicyCommitment</td><td class="addr">0x049B09c4aE1974F84164b65a9f0AB412dA9814f2</td></tr>
+          <tr><td>ERC-8004 ZK Agent</td><td class="addr">#32271</td></tr>
+          <tr><td>ERC-8004 Yield Agent</td><td class="addr">#32272</td></tr>
+          <tr><td>LP Position (WETH-USDC)</td><td class="addr">#4816034 (0.05% fee, full range)</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- Safety -->
+    <section>
+      <h2>Safety Guardrails</h2>
+      <div class="guardrails">
+        <div class="guardrail">Fail-closed AI: API failure = reject all actions</div>
+        <div class="guardrail">50% max swap fraction per transaction</div>
+        <div class="guardrail">Circuit breakers: USDC depeg, TVL crash, gas freeze</div>
+        <div class="guardrail">ZK proofs required before swap execution</div>
+        <div class="guardrail">Spending scope enforced (max single + period limits)</div>
+        <div class="guardrail">Gas price ceiling (5 gwei cap on Base)</div>
+        <div class="guardrail">Rate cross-validation across 3 data sources</div>
+        <div class="guardrail">Paper mode default — live requires explicit flag</div>
+      </div>
+    </section>
+
+    <!-- Quick Start -->
+    <section>
+      <h2>Run It Yourself</h2>
+      <div class="code">
+        <span class="comment"># Clone + install</span><br>
+        <span class="cmd">git clone https://github.com/SenorCodigo69/synthesis-yield-agent</span><br>
+        <span class="cmd">cd synthesis-yield-agent</span><br>
+        <span class="cmd">python -m venv .venv && source .venv/bin/activate</span><br>
+        <span class="cmd">pip install -r requirements.txt</span><br>
+        <br>
+        <span class="comment"># Scan live yield rates</span><br>
+        <span class="cmd">python -m src scan</span><br>
+        <br>
+        <span class="comment"># View Uniswap LP pool yields</span><br>
+        <span class="cmd">python -m src pools</span><br>
+        <br>
+        <span class="comment"># AI-powered swap recommendation</span><br>
+        <span class="cmd">python -m src swap --ai</span><br>
+        <br>
+        <span class="comment"># LP position management</span><br>
+        <span class="cmd">python -m src lp --action status</span><br>
+        <br>
+        <span class="comment"># Full unified demo (ZK + Yield + V4 Hook)</span><br>
+        <span class="cmd">cd ../synthesis-zk-agent && python demo_full.py</span><br>
+      </div>
+    </section>
+
+    <!-- Links -->
+    <section>
+      <h2>Repos + Links</h2>
+      <div class="links">
+        <a href="https://github.com/SenorCodigo69/synthesis-yield-agent" class="link-card">
+          <h3>Yield Agent</h3>
+          <p>AI yield optimizer — Aave, Morpho, Uniswap LP, swap reasoning, circuit breakers. 281 tests, 9 security audits.</p>
+        </a>
+        <a href="https://github.com/SenorCodigo69/synthesis-zk-agent" class="link-card">
+          <h3>ZK Agent</h3>
+          <p>Zero-knowledge privacy layer — Groth16 proofs, V4 hook, selective disclosure, policy commitments. 89 tests, 5 audits.</p>
+        </a>
+        <a href="https://basescan.org/address/0x45eC09fB08B83f104F15f3709F4677736112c080" class="link-card">
+          <h3>ZKGatedHook on BaseScan</h3>
+          <p>First ZK access-control hook on Uniswap V4. Verifies Groth16 proofs in beforeSwap callback.</p>
+        </a>
+        <a href="https://basescan.org/tx/0x83c7071962e5a2267ad95fa0afad585720f221516bf56e00abde81c45341793a" class="link-card">
+          <h3>LP Mint Transaction</h3>
+          <p>Live WETH-USDC full-range LP position minted by the agent on Base mainnet.</p>
+        </a>
+      </div>
+    </section>
+
+    <!-- Footer -->
+    <footer>
+      <p class="hackathon">EF Synthesis Hackathon 2026</p>
+      <p>Built with Claude Code (claude-opus-4-6) across 44 sessions</p>
+      <p style="margin-top: 8px;">Tracks: "Agents that pay" + "Agents that keep secrets" + Uniswap "Agentic Finance"</p>
+    </footer>
+
+  </div>
+</body>
+</html>
