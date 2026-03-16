@@ -50,6 +50,7 @@ def build_analysis_prompt(
     yield_rates: list[dict],
     gas_gwei: Decimal,
     eth_price: Decimal,
+    lp_pools: list[dict] | None = None,
 ) -> str:
     """Build the analysis prompt for Claude."""
     rates_text = ""
@@ -59,6 +60,17 @@ def build_analysis_prompt(
             f"${r['tvl']:,.0f} TVL, {r['utilization']:.1%} util\n"
         )
 
+    lp_text = ""
+    if lp_pools:
+        lp_text = "\n## Uniswap LP Fee Yields (Base)\n"
+        lp_text += "These are fee-based yields from providing liquidity. Higher APY but comes with impermanent loss (IL) risk.\n"
+        for p in lp_pools[:5]:
+            lp_text += (
+                f"  - {p['pair']}: {p['fee_apy']:.2%} fee APY, "
+                f"${p['tvl']:,.0f} TVL ({p['project']})\n"
+            )
+        lp_text += "  NOTE: LP yields are NOT risk-free — impermanent loss can eat into or exceed fee profits.\n"
+
     return f"""You are an autonomous DeFi yield agent on Base chain. Analyze the current state and recommend ONE action.
 
 ## Current State
@@ -67,8 +79,8 @@ def build_analysis_prompt(
 - ETH price: ${eth_price:,.2f}
 - Gas: {gas_gwei:.4f} gwei (Base L2 — very cheap)
 
-## Yield Rates (USDC lending on Base)
-{rates_text}
+## Yield Rates (USDC lending on Base — no impermanent loss)
+{rates_text}{lp_text}
 ## Rules
 1. Primary goal: maximize risk-adjusted yield on idle USDC
 2. Only swap USDC to WETH if you have strong conviction ETH will appreciate more than lending yield
@@ -76,6 +88,8 @@ def build_analysis_prompt(
 4. Never recommend swapping more than 50% of any balance
 5. If balances are small (<$5), prefer HOLD to avoid gas waste
 6. Depositing into the highest-yielding protocol is usually the right move for idle USDC
+7. When comparing lending vs LP: lending is safer (no IL), LP can earn more but has IL risk
+8. For LP yield comparison, focus on fee APY (sustainable), not reward APY (temporary)
 
 ## Output Format
 Respond with ONLY a JSON object (no markdown, no explanation outside JSON):
@@ -180,10 +194,15 @@ async def get_swap_recommendation(
     gas_gwei: Decimal,
     eth_price: Decimal,
     anthropic_api_key: str | None = None,
+    lp_pools: list[dict] | None = None,
 ) -> SwapRecommendation:
     """Get AI-powered swap recommendation from Claude.
 
     Falls back to rule-based logic if API key is not set or call fails.
+
+    Args:
+        lp_pools: Optional Uniswap LP pool data for yield comparison.
+            Each dict: {"pair": str, "fee_apy": float, "tvl": float, "project": str}
     """
     # Rule-based fallback if no API key
     if not anthropic_api_key:
@@ -193,6 +212,7 @@ async def get_swap_recommendation(
 
     prompt = build_analysis_prompt(
         usdc_balance, weth_balance_usd, yield_rates, gas_gwei, eth_price,
+        lp_pools=lp_pools,
     )
 
     try:
