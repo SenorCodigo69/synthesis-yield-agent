@@ -15,6 +15,7 @@ Skills used:
 
 import logging
 from dataclasses import dataclass
+from urllib.parse import quote
 
 logger = logging.getLogger(__name__)
 
@@ -85,10 +86,10 @@ def plan_swap(
     # Generate deep link (Uniswap app URL format)
     deep_link = (
         f"{UNISWAP_APP_BASE}/swap"
-        f"?inputCurrency={input_addr}"
-        f"&outputCurrency={output_addr}"
-        f"&exactAmount={amount}"
-        f"&chain={chain.lower()}"
+        f"?inputCurrency={quote(str(input_addr), safe='')}"
+        f"&outputCurrency={quote(str(output_addr), safe='')}"
+        f"&exactAmount={quote(str(amount), safe='')}"
+        f"&chain={quote(chain.lower(), safe='')}"
     )
 
     # Warnings
@@ -168,12 +169,12 @@ def plan_liquidity(
 
     # Generate deep link
     deep_link = (
-        f"{UNISWAP_APP_BASE}/add/{token0_addr}/{token1_addr}"
+        f"{UNISWAP_APP_BASE}/add/{quote(str(token0_addr), safe='')}/{quote(str(token1_addr), safe='')}"
         f"/{fee_tier}"
-        f"?chain={chain.lower()}"
+        f"?chain={quote(chain.lower(), safe='')}"
     )
     if hook_address and version == "v4":
-        deep_link += f"&hook={hook_address}"
+        deep_link += f"&hook={quote(str(hook_address), safe='')}"
 
     warnings = []
     if fee_tier not in [100, 500, 3000, 10000]:
@@ -357,6 +358,6 @@ async def discover_best_pools(
         logger.error("Pool discovery failed: %s", e)
         return []
 
-    # Sort by score (best first)
+    # Sort by score (best first), cap at 50
     pools.sort(key=lambda p: p.score, reverse=True)
-    return pools
+    return pools[:50]

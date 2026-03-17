@@ -103,7 +103,9 @@ class LPManager:
 
         except Exception as e:
             logger.error("LP cycle error: %s", e, exc_info=True)
-            return CycleResult(action="error", details=str(e))
+            # Truncate error details to avoid leaking sensitive info (RPC URLs, keys)
+            err_msg = str(e)[:200] if str(e) else "Unknown error"
+            return CycleResult(action="error", details=err_msg)
 
     async def _handle_no_position(self, signals: LPSignals) -> CycleResult:
         """No active position — compute range and mint if signals are strong enough."""
@@ -202,7 +204,9 @@ class LPManager:
 
         # Step 1: Exit old position (decrease liquidity + collect + burn)
         logger.info("REBALANCE: exiting position #%d", pos.token_id)
-        exit_result = await self.adapter.exit_position(self.private_key, pos.token_id)
+        old_token_id = pos.token_id
+        self.position = None  # Clear immediately — if mint fails, next cycle sees "no position"
+        exit_result = await self.adapter.exit_position(self.private_key, old_token_id)
 
         weth_out = exit_result.amount0 + exit_result.fees0
         usdc_out = exit_result.amount1 + exit_result.fees1
@@ -223,8 +227,8 @@ class LPManager:
 
         # Step 2: Mint new position with updated range
         # Use 95% of returned tokens (leave buffer for rounding)
-        weth_raw = int(weth_out * 0.95)
-        usdc_raw = int(usdc_out * 0.95)
+        weth_raw = weth_out * 95 // 100
+        usdc_raw = usdc_out * 95 // 100
 
         if weth_raw <= 0 and usdc_raw <= 0:
             self.position = None
@@ -266,6 +270,8 @@ class LPManager:
             interval_minutes: Minutes between cycles (default 5).
             max_cycles: Stop after N cycles (None = run forever).
         """
+        if interval_minutes < 1:
+            raise ValueError(f"interval_minutes must be >= 1, got {interval_minutes}")
         self._running = True
         cycle = 0
 
