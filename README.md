@@ -150,22 +150,65 @@ Full-range LP position management for WETH-USDC on Base, with AI-driven concentr
 ### LP Commands
 
 ```bash
+# Basic position management
 python -m src lp --action status --token-id 123              # Read position state
-python -m src lp --action mint --weth 1.0 --usdc 2500        # Mint (dry-run)
-python -m src lp --action mint --weth 1.0 --usdc 2500 --live # Mint (on-chain)
+python -m src lp --action mint --weth 1.0 --usdc 2500        # Full-range mint (dry-run)
+python -m src lp --action mint --weth 1.0 --usdc 2500 --live # Full-range mint (on-chain)
 python -m src lp --action collect --token-id 123 --live      # Collect fees
 python -m src lp --action exit --token-id 123 --live         # Full exit (3 txs)
+
+# AI-driven concentrated LP
+python -m src lp --action optimize                           # Show quant signals + recommended tick range
+python -m src lp --action concentrated-mint --weth 0.5 --usdc 1000 --live  # Mint with optimized range
+python -m src lp --action rebalance --token-id 123           # Check if rebalance needed
+python -m src lp --action il-report --token-id 123           # Impermanent loss + fee profitability
 ```
+
+### Concentrated LP (AI-Driven)
+
+The agent uses quant signals from the trading engine to compute optimal tick ranges for concentrated liquidity positions, maximizing fee capture while minimizing impermanent loss.
+
+**Signal pipeline** (fully on-chain, zero external APIs):
+1. Read ETH price from WETH-USDC pool `slot0().sqrtPriceX96`
+2. Store snapshots in SQLite → build OHLC candles from history
+3. Compute ATR, Bollinger Bands, RSI, ADX from candles
+4. Detect market regime (BULL/BEAR/SIDEWAYS) via weighted-vote system
+
+**Tick range optimizer** (8-step pipeline):
+1. ATR-based width (2x ATR = ~95% daily coverage)
+2. Regime adjustment (SIDEWAYS → tight, BULL → wide+skew up, BEAR → wide+skew down or exit)
+3. ADX gate (strong trend → widen 50%)
+4. RSI extremes (overbought → skew down, oversold → skew up)
+5. Bollinger clamp (range vs BB sanity check)
+6. Safety bounds (5% minimum, 50% maximum)
+7. Price bounds → tick conversion
+8. Tick alignment to fee tier spacing
+
+**Automated LP Manager** (`lp_manager.py`):
+- Continuous loop: read pool → compute signals → mint/hold/rebalance/exit
+- Auto-rebalance triggers: out-of-range, edge proximity, regime change, staleness
+- Bear protection: exits LP during strong bear, stays out until regime shifts
+- Rebalance execution: exit old position → mint new with updated range
+- Configurable interval (default 5min), graceful stop
+
+**Rebalance triggers:**
+| Trigger | Urgency | Action |
+|---|---|---|
+| Out of range (earning 0 fees) | HIGH | Always rebalance |
+| Near edge (within 10%) | MEDIUM | Rebalance if gas OK |
+| Regime change | LOW | Rebalance if gas OK |
+| Stale (>24h) | LOW | Rebalance if gas OK |
+
+**IL Tracker:** Concentrated IL formula + fee-vs-IL profitability. Reports whether LP is outperforming HODL.
 
 ### LP Features
 
-- **Full-range positions** — mint, collect fees, exit (decrease + collect + burn NFT)
+- **Full-range + concentrated positions** — mint, collect fees, exit, auto-rebalance
 - **4 fee tiers** — 0.01%, 0.05% (default), 0.3%, 1%
-- **LP Signals** — ATR, Bollinger Bands, RSI, ADX for tick range optimization
-- **Regime detection** — BULL/BEAR/SIDEWAYS classification for range width adjustment
-- **LP Optimizer** — 8-step pipeline: ATR-based width → regime adjustment → ADX gate → RSI skew → Bollinger clamp → safety bounds → price bounds → tick alignment
-- **Tick math** — price ↔ tick conversions for WETH-USDC (18/6 decimals)
-- **Safety** — gas ceiling (5 gwei), deadline enforcement, nonce tracking, zero-amount validation
+- **On-chain signals** — ATR, Bollinger Bands, RSI, ADX from pool reads (no CoinGecko)
+- **Regime detection** — BULL/BEAR/SIDEWAYS classification from ported trading agent logic
+- **Tick math** — price ↔ tick conversions for WETH-USDC (18/6 decimals), float-safe bounds
+- **Safety** — gas ceiling (5 gwei), slippage protection, deadline enforcement, nonce tracking
 
 ### Pool Analytics
 
@@ -269,11 +312,11 @@ Key security measures:
 ## Testing
 
 ```bash
-pytest tests/           # 281 tests
+pytest tests/           # 343 tests
 pytest tests/ -v        # Verbose output
 ```
 
-**281 tests** covering data layer, protocols, strategy, execution, portfolio, circuit breakers, health monitor, security, Uniswap adapter, AI swap reasoning, LP management, pool analytics, tick math, and execution logger.
+**343 tests** covering data layer, protocols, strategy, execution, portfolio, circuit breakers, health monitor, security, Uniswap adapter, AI swap reasoning, LP management, pool analytics, tick math, concentrated LP optimizer, rebalancer, IL tracker, LP manager, and execution logger.
 
 ## Configuration
 
@@ -310,10 +353,13 @@ src/
 ├── ai_swap.py           # AI-powered swap reasoning (Claude + fallback)
 ├── erc8004.py           # ERC-8004 agent identity registration
 ├── execution_logger.py  # Structured JSON execution logger (agent.json companion)
-├── uniswap_lp.py        # LP position management (mint, collect, exit)
-├── lp_signals.py        # Quant signals for tick range optimization
+├── uniswap_lp.py        # LP position management (full-range + concentrated mint)
+├── lp_signals.py        # On-chain pool reads → snapshots → indicators + regime
 ├── lp_tick_math.py      # Tick ↔ price conversions for WETH-USDC
-├── lp_optimizer.py      # Concentrated LP tick range optimizer
+├── lp_optimizer.py      # Regime-aware tick range optimizer (8-step pipeline)
+├── lp_rebalancer.py     # Rebalance trigger detection (OOR, edge, regime, stale)
+├── lp_il_tracker.py     # Concentrated LP impermanent loss + fee profitability
+├── lp_manager.py        # Automated LP loop (mint → monitor → rebalance → exit)
 ├── circuit_breakers.py  # Depeg, TVL crash, gas freeze, rate divergence
 ├── health_monitor.py    # Pre-execution health checks (6 per protocol)
 ├── depeg_monitor.py     # Live USDC price fetching + validation
