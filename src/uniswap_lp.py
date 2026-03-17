@@ -598,6 +598,87 @@ class UniswapLPAdapter:
             gas_used=receipt.get("gasUsed", 0),
         )
 
+    # ── Auto-Compound (Collect + Increase Liquidity) ─────────
+
+    async def compound_fees(
+        self,
+        private_key: str,
+        token_id: int,
+        slippage_pct: float = 1.0,
+    ) -> tuple[CollectResult, int, int]:
+        """Collect accumulated fees and reinvest into the same position.
+
+        Steps:
+        1. Collect fees (WETH + USDC returned to wallet)
+        2. increaseLiquidity with collected amounts
+
+        Returns:
+            (collect_result, liquidity_added, amount0_added, amount1_added)
+            Returns (collect_result, 0, 0) if fees too small to compound.
+        """
+        # Step 1: Collect fees
+        collect = await self.collect_fees(private_key, token_id)
+        weth_fees = collect.amount0
+        usdc_fees = collect.amount1
+
+        if weth_fees == 0 and usdc_fees == 0:
+            logger.info("No fees to compound for position #%d", token_id)
+            return collect, 0, 0
+
+        # Step 2: Approve collected amounts for reinvestment
+        if weth_fees > 0 or usdc_fees > 0:
+            await self.approve_tokens(private_key, weth_fees, usdc_fees)
+
+        # Step 3: Increase liquidity with collected fees
+        account = Account.from_key(private_key)
+        block = await self.w3.eth.get_block("latest")
+        deadline = block["timestamp"] + DEFAULT_DEADLINE_SECONDS
+
+        slippage_factor = 1 - slippage_pct / 100
+        amount0_min = int(weth_fees * slippage_factor)
+        amount1_min = int(usdc_fees * slippage_factor)
+
+        increase_params = (
+            token_id,
+            weth_fees,
+            usdc_fees,
+            amount0_min,
+            amount1_min,
+            deadline,
+        )
+
+        tx_hash, receipt = await self._build_sign_send_with_receipt(
+            self._pm.functions.increaseLiquidity(increase_params),
+            private_key,
+        )
+
+        # Parse increaseLiquidity return: (liquidity, amount0, amount1)
+        # From logs or return data
+        liquidity_added = 0
+        amount0_added = 0
+        amount1_added = 0
+
+        for log_entry in receipt.get("logs", []):
+            data = log_entry.get("data", b"")
+            if isinstance(data, str):
+                data = bytes.fromhex(data[2:]) if data.startswith("0x") else data.encode()
+            # IncreaseLiquidity event: tokenId(uint256) + liquidity(uint128) + amount0(uint256) + amount1(uint256)
+            if len(data) >= 128:
+                liquidity_added = int.from_bytes(data[32:64], "big")
+                amount0_added = int.from_bytes(data[64:96], "big")
+                amount1_added = int.from_bytes(data[96:128], "big")
+                break
+
+        logger.info(
+            "Compounded #%d: +%s WETH +%s USDC (liquidity +%d) tx=%s",
+            token_id,
+            Decimal(str(amount0_added)) / Decimal(10**WETH_DECIMALS),
+            Decimal(str(amount1_added)) / Decimal(10**USDC_DECIMALS),
+            liquidity_added, tx_hash,
+        )
+
+        return collect, liquidity_added, amount0_added
+
     # ── Pool Reads ─────────────────────────────────────────────
 
     async def get_pool_slot0(self, fee: int = DEFAULT_FEE) -> tuple[int, int]:

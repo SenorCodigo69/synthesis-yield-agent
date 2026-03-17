@@ -22,6 +22,7 @@ from eth_account import Account
 from web3 import AsyncWeb3
 
 from .lp_il_tracker import compute_il_report
+from .lp_learner import record_decision, record_outcome
 from .lp_optimizer import OptimizedRange, compute_range
 from .lp_rebalancer import check_rebalance, RebalanceDecision
 from .lp_signals import LPSignals, compute_signals, store_snapshot, read_pool_price
@@ -44,6 +45,7 @@ class ManagedPosition:
     entry_regime: str
     minted_at: float  # Unix timestamp
     last_rebalance_at: float
+    decision_id: int | None = None  # Learner tracking ID
 
 
 @dataclass
@@ -148,6 +150,18 @@ class LPManager:
         )
 
         now = time.time()
+
+        # Record decision for learning loop
+        decision_id = record_decision(
+            action="mint", regime=signals.regime,
+            regime_confidence=signals.regime_confidence,
+            tick_lower=opt.tick_lower, tick_upper=opt.tick_upper,
+            width_pct=opt.width_pct, entry_price=signals.current_price,
+            atr_pct=signals.atr_pct, rsi=signals.rsi, adx=signals.adx,
+            token_id=result.token_id, reasoning=opt.reasoning,
+            db_path=self.db_path,
+        )
+
         self.position = ManagedPosition(
             token_id=result.token_id,
             tick_lower=opt.tick_lower,
@@ -156,6 +170,7 @@ class LPManager:
             entry_regime=signals.regime,
             minted_at=now,
             last_rebalance_at=now,
+            decision_id=decision_id,
         )
 
         details = (
@@ -205,15 +220,31 @@ class LPManager:
         # Step 1: Exit old position (decrease liquidity + collect + burn)
         logger.info("REBALANCE: exiting position #%d", pos.token_id)
         old_token_id = pos.token_id
+        old_decision_id = pos.decision_id
         self.position = None  # Clear immediately — if mint fails, next cycle sees "no position"
         exit_result = await self.adapter.exit_position(self.private_key, old_token_id)
 
         weth_out = exit_result.amount0 + exit_result.fees0
         usdc_out = exit_result.amount1 + exit_result.fees1
 
+        # Record outcome for learning loop
+        if old_decision_id:
+            fees_weth = exit_result.fees0 / 10**18
+            fees_usdc = exit_result.fees1 / 10**6
+            fees_usd = fees_weth * signals.current_price + fees_usdc
+            hold_hours = (time.time() - pos.minted_at) / 3600
+            record_outcome(
+                decision_id=old_decision_id,
+                exit_price=signals.current_price,
+                fees_weth=fees_weth, fees_usdc=fees_usdc, fees_usd=fees_usd,
+                hold_duration_hours=hold_hours,
+                rebalance_reason=decision.reason,
+                db_path=self.db_path,
+            )
+
         logger.info(
             "Exited #%d: %s WETH + %s USDC (incl fees)",
-            pos.token_id,
+            old_token_id,
             Decimal(str(weth_out)) / Decimal(10**WETH_DECIMALS),
             Decimal(str(usdc_out)) / Decimal(10**USDC_DECIMALS),
         )
@@ -244,6 +275,17 @@ class LPManager:
         )
 
         now = time.time()
+
+        new_decision_id = record_decision(
+            action="rebalance", regime=signals.regime,
+            regime_confidence=signals.regime_confidence,
+            tick_lower=new_range.tick_lower, tick_upper=new_range.tick_upper,
+            width_pct=new_range.width_pct, entry_price=signals.current_price,
+            atr_pct=signals.atr_pct, rsi=signals.rsi, adx=signals.adx,
+            token_id=mint_result.token_id, reasoning=new_range.reasoning,
+            db_path=self.db_path,
+        )
+
         self.position = ManagedPosition(
             token_id=mint_result.token_id,
             tick_lower=new_range.tick_lower,
@@ -252,10 +294,11 @@ class LPManager:
             entry_regime=signals.regime,
             minted_at=now,
             last_rebalance_at=now,
+            decision_id=new_decision_id,
         )
 
         details = (
-            f"Rebalanced: #{pos.token_id} → #{mint_result.token_id} "
+            f"Rebalanced: #{old_token_id} → #{mint_result.token_id} "
             f"ticks=[{new_range.tick_lower},{new_range.tick_upper}] "
             f"${new_range.price_lower:.0f}–${new_range.price_upper:.0f} "
             f"reason={decision.reason} tx={mint_result.tx_hash}"
