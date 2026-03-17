@@ -773,4 +773,57 @@ Each entry should capture:
 
 ---
 
+## Day 16 — Concentrated LP Engine + DynamicFeeHook (March 16-17, 2026)
+
+### Session: Hackathon Day 16 Build (Session 49)
+
+**Participants:** Human (project lead) + Claude Opus 4.6 (via claude-code)
+
+**Key Decisions:**
+- Build concentrated LP with quant strategy integration — the agent's trading signals (ATR, BB, RSI, ADX, regime) drive tick range placement
+- Replace CoinGecko with on-chain pool reads — zero external API dependencies
+- Build automated LP manager with continuous rebalance loop
+- Add Uniswap AI Skills integration for ecosystem compatibility
+- Build and deploy DynamicFeeHook — first volatility-responsive V4 fee hook
+- Add learning loop — agent tracks performance and adjusts strategy over time
+
+**Pivots:**
+- Originally planned to use CoinGecko for OHLCV data — user pointed out we can read directly from the pool. Removed CoinGecko entirely, built SQLite snapshot → candle pipeline from on-chain reads
+- slot0 tick parsing was wrong (int24 in 256-bit word) — fixed two's complement sign extension
+
+**Breakthroughs:**
+- **Full autonomous LP pipeline built in one session:** on-chain signals → regime detection → tick optimization → concentrated mint → auto-rebalance → IL tracking → learning feedback. Zero external APIs
+- **DynamicFeeHook deployed to Base mainnet** (`0xA9C97D94F25e32F2b4119F10944d5992fab60080`) — first V4 hook where an AI agent's quant signals directly control pool fee parameters
+- **Learning loop wired in:** every mint/rebalance/exit automatically recorded, win rates computed per regime, width adjustments fed back into optimizer. The agent literally gets better over time
+- **3 security audits in one session** — 48 total findings, 17 fixed (1 CRITICAL float overflow, 5 HIGH API/key/division issues)
+- Live-tested all 4 new CLI commands against Base mainnet pool — $2,349 ETH price read from sqrtPriceX96
+
+**Agent Contributions:**
+- Built 8 new modules (~2,800 LOC): lp_tick_math, lp_signals, lp_optimizer, lp_rebalancer, lp_il_tracker, lp_manager, lp_learner, uniswap_skills
+- Built DynamicFeeHook.sol + 24 Foundry tests + deploy script
+- Added mint_concentrated() + get_pool_slot0() + compound_fees() to LP adapter
+- Added 4 CLI commands: optimize, concentrated-mint, rebalance, il-report
+- Ran 3 security audits (48 findings), fixed 17 (all CRITICAL + HIGH + priority MEDIUM)
+- Deployed DynamicFeeHook to Base mainnet via CREATE2 with address flag mining
+- Updated READMEs across all 3 repos
+- 95 new tests (371 Python + 74 Solidity = 445 total across repos)
+
+**Human Contributions:**
+- Architecture call: "could we plug in our quant trading strategies here" — the key insight that connected the trading agent's signals to LP management
+- "why do we need CoinGecko?" — led to removing external dependency entirely
+- "can we have the agent deploy and rebalance" — drove the automated manager
+- "what about a V4 dynamic fee hook" — pushed for the novel Solidity work
+- "lets deploy to base" — committed to on-chain deployment at midnight
+- Provided private key for Base mainnet deploy
+- Kept pushing through a ~4 hour session to ship an extraordinary amount
+
+**Context:**
+- 7 contracts now deployed across 2 chains (6 Base + 1 Ethereum)
+- 445 tests across all repos (371 Python + 74 Solidity)
+- Concentrated LP system is feature-complete: signals → optimization → execution → rebalance → learning
+- DynamicFeeHook is the first V4 hook driven by an AI agent's volatility signals
+- 5 days until deadline (March 22)
+
+---
+
 <!-- Add new entries below this line -->
