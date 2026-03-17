@@ -84,6 +84,7 @@ def _get_db(db_path: Path | None = None) -> sqlite3.Connection:
     path = db_path or DEFAULT_DB_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(path))
+    conn.execute("PRAGMA foreign_keys = ON")
     conn.executescript(_SCHEMA)
     return conn
 
@@ -105,18 +106,20 @@ def record_decision(
 ) -> int:
     """Record an LP decision. Returns the decision ID."""
     conn = _get_db(db_path)
-    cursor = conn.execute(
-        """INSERT INTO lp_decisions
-           (timestamp, token_id, action, regime, regime_confidence,
-            tick_lower, tick_upper, width_pct, entry_price, atr_pct, rsi, adx, reasoning)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (time.time(), token_id, action, regime, regime_confidence,
-         tick_lower, tick_upper, width_pct, entry_price, atr_pct, rsi, adx, reasoning),
-    )
-    decision_id = cursor.lastrowid
-    conn.commit()
-    conn.close()
-    return decision_id
+    try:
+        cursor = conn.execute(
+            """INSERT INTO lp_decisions
+               (timestamp, token_id, action, regime, regime_confidence,
+                tick_lower, tick_upper, width_pct, entry_price, atr_pct, rsi, adx, reasoning)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (time.time(), token_id, action, regime, regime_confidence,
+             tick_lower, tick_upper, width_pct, entry_price, atr_pct, rsi, adx, reasoning),
+        )
+        decision_id = cursor.lastrowid
+        conn.commit()
+        return decision_id
+    finally:
+        conn.close()
 
 
 def record_outcome(
@@ -133,16 +136,18 @@ def record_outcome(
 ) -> None:
     """Record the outcome of an LP decision."""
     conn = _get_db(db_path)
-    conn.execute(
-        """INSERT INTO lp_outcomes
-           (decision_id, timestamp, exit_price, fees_weth, fees_usdc,
-            fees_usd, il_pct, net_pnl_usd, hold_duration_hours, rebalance_reason)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (decision_id, time.time(), exit_price, fees_weth, fees_usdc,
-         fees_usd, il_pct, net_pnl_usd, hold_duration_hours, rebalance_reason),
-    )
-    conn.commit()
-    conn.close()
+    try:
+        conn.execute(
+            """INSERT INTO lp_outcomes
+               (decision_id, timestamp, exit_price, fees_weth, fees_usdc,
+                fees_usd, il_pct, net_pnl_usd, hold_duration_hours, rebalance_reason)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (decision_id, time.time(), exit_price, fees_weth, fees_usdc,
+             fees_usd, il_pct, net_pnl_usd, hold_duration_hours, rebalance_reason),
+        )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def get_performance_by_regime(db_path: Path | None = None) -> list[PerformanceStats]:
@@ -184,7 +189,7 @@ def get_performance_by_regime(db_path: Path | None = None) -> list[PerformanceSt
             adjustment = 1.3  # Widen — too many losses (likely OOR)
         elif win_rate < 50:
             adjustment = 1.15
-        elif win_rate > 70 and avg_il and abs(avg_il) < 0.01:
+        elif win_rate > 70 and avg_il is not None and abs(avg_il) < 0.01:
             adjustment = 0.85  # Tighten — winning easily with low IL
         elif win_rate > 80:
             adjustment = 0.9
