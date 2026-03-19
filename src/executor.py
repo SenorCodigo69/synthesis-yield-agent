@@ -11,6 +11,7 @@ All modes enforce:
 - Full audit trail logging
 """
 
+import asyncio
 import logging
 import uuid
 from datetime import datetime, timezone, timedelta
@@ -357,6 +358,9 @@ class Executor:
                 f"${record.amount_usd:,.2f} USDC"
             )
             await adapter.approve(record.amount_usd, self._sender, self._signer)
+
+            # Brief wait for nonce to propagate after approve tx
+            await asyncio.sleep(2)
 
             logger.info(
                 f"[LIVE] Supplying {record.protocol.value}: "
