@@ -136,6 +136,7 @@ Safety: No private keys pass through the AI. Only public market data is analyzed
 | Aave V3 deposit #1 | `0xdd2dcabb...` | 10 USDC supply (block 43440158) |
 | Aave V3 deposit #2 | `0x638f4567...` | 4 USDC supply (block 43446450) |
 | **Total Aave position** | — | **14 USDC earning ~2.5% APY** |
+| LP Position (full-range) | NFT #4816034 | WETH-USDC 0.05% pool |
 
 **Wallet:** `0x8d691720bF8C81044DB1a77b82D0eF5f5bffdE6C`
 
@@ -200,6 +201,12 @@ The agent uses quant signals from the trading engine to compute optimal tick ran
 | Stale (>24h) | LOW | Rebalance if gas OK |
 
 **IL Tracker:** Concentrated IL formula + fee-vs-IL profitability. Reports whether LP is outperforming HODL.
+
+**Learning Loop** (`lp_learner.py`):
+- Tracks win/loss outcomes per regime (BULL/BEAR/SIDEWAYS)
+- Records every decision (mint, rebalance, exit) with regime context
+- Feeds back into optimizer: adjusts width multipliers based on historical performance
+- SQLite persistence — survives restarts, accumulates over time
 
 ### LP Features
 
@@ -312,11 +319,11 @@ Key security measures:
 ## Testing
 
 ```bash
-pytest tests/           # 343 tests
+pytest tests/           # 371 tests
 pytest tests/ -v        # Verbose output
 ```
 
-**343 tests** covering data layer, protocols, strategy, execution, portfolio, circuit breakers, health monitor, security, Uniswap adapter, AI swap reasoning, LP management, pool analytics, tick math, concentrated LP optimizer, rebalancer, IL tracker, LP manager, and execution logger.
+**371 tests** covering data layer, protocols, strategy, execution, portfolio, circuit breakers, health monitor, security, Uniswap adapter, AI swap reasoning, LP management, pool analytics, tick math, concentrated LP optimizer, rebalancer, IL tracker, LP manager, learning loop, and execution logger.
 
 ## Configuration
 
@@ -360,6 +367,8 @@ src/
 ├── lp_rebalancer.py     # Rebalance trigger detection (OOR, edge, regime, stale)
 ├── lp_il_tracker.py     # Concentrated LP impermanent loss + fee profitability
 ├── lp_manager.py        # Automated LP loop (mint → monitor → rebalance → exit)
+├── lp_learner.py        # Learning loop — tracks outcomes per regime, adjusts optimizer
+├── uniswap_skills.py    # Uniswap ecosystem compatibility layer
 ├── circuit_breakers.py  # Depeg, TVL crash, gas freeze, rate divergence
 ├── health_monitor.py    # Pre-execution health checks (6 per protocol)
 ├── depeg_monitor.py     # Live USDC price fetching + validation
