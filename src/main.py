@@ -48,6 +48,9 @@ from src.models import (
 )
 from src.execution_logger import ExecutionLogger
 from src.portfolio import Portfolio
+from src.protocols.aave_v3 import AaveV3Adapter
+from src.protocols.morpho_blue import MorphoBlueAdapter
+from src.protocols.tx_helpers import TransactionSigner
 from src.strategy.allocator import AllocationPlan, Allocation, compute_allocations
 from src.strategy.rebalancer import check_rebalance_triggers, RebalanceTracker
 
@@ -85,6 +88,37 @@ async def _get_gas(rpc_url: str) -> GasPrice:
         priority_fee_gwei=Decimal("0.001"),
         source="default-base",
     )
+
+
+def _build_live_context(config: dict, rpc_url: str, chain: Chain):
+    """Build protocol adapters, signer, and sender for live execution.
+
+    Returns (adapters_dict, signer, sender_address).
+    Raises if PRIVATE_KEY not set.
+    """
+    import os
+    from web3 import AsyncWeb3
+
+    private_key = os.environ.get("PRIVATE_KEY") or config.get("private_key")
+    if not private_key:
+        click.echo("  ERROR: PRIVATE_KEY env var required for live mode")
+        sys.exit(1)
+
+    signer = TransactionSigner(private_key)
+    w3 = AsyncWeb3(AsyncWeb3.AsyncHTTPProvider(rpc_url))
+    sender = w3.eth.account.from_key(signer.key).address
+
+    morpho_vault = config.get("protocols", {}).get("morpho_blue", {}).get("vault_address")
+    morpho_adapter = MorphoBlueAdapter(w3, chain)
+    if morpho_vault:
+        morpho_adapter.set_vault(morpho_vault)
+
+    adapters = {
+        ProtocolName.AAVE_V3: AaveV3Adapter(w3, chain),
+        ProtocolName.MORPHO: morpho_adapter,
+    }
+
+    return adapters, signer, sender
 
 
 @click.group()
@@ -304,12 +338,13 @@ async def _allocate(
 @click.option("--chain", default="base", help="Chain (base/ethereum/arbitrum)")
 @click.option("--capital", default=10000, type=float, help="Total capital in USD")
 @click.option("--hold-days", default=90, type=int, help="Expected hold period in days")
-@click.option("--mode", default="paper", type=click.Choice(["paper", "dry_run"]),
+@click.option("--mode", default="paper", type=click.Choice(["paper", "dry_run", "live"]),
               help="Execution mode")
 @click.option("--json-output", "use_json", is_flag=True, help="Output as JSON")
 def execute(chain: str, capital: float, hold_days: int, mode: str, use_json: bool):
     """Execute allocation plan (paper mode by default)."""
-    exec_mode = ExecutionMode.PAPER if mode == "paper" else ExecutionMode.DRY_RUN
+    mode_map = {"paper": ExecutionMode.PAPER, "dry_run": ExecutionMode.DRY_RUN, "live": ExecutionMode.LIVE}
+    exec_mode = mode_map[mode]
     asyncio.run(_execute(chain, Decimal(str(capital)), hold_days, exec_mode, use_json))
 
 
@@ -362,10 +397,16 @@ async def _execute(
         # Compute allocation
         plan = compute_allocations(rates, gas, capital, scope, hold_days)
 
+        # Build live context if needed
+        live_kwargs = {}
+        if mode == ExecutionMode.LIVE:
+            adapters, signer, sender = _build_live_context(config, rpc_url, chain)
+            live_kwargs = {"adapters": adapters, "signer": signer, "sender": sender}
+
         # Execute
         executor = Executor(
             mode=mode, db=db, portfolio=portfolio,
-            scope=scope, gas_price=gas,
+            scope=scope, gas_price=gas, **live_kwargs,
         )
         records = await executor.execute_plan(plan, rates)
 
@@ -778,13 +819,14 @@ async def _health(chain_name: str, use_json: bool):
 
 @cli.command(name="emergency-withdraw")
 @click.option("--capital", default=10000, type=float, help="Total capital in USD")
-@click.option("--mode", default="paper", type=click.Choice(["paper", "dry_run"]),
+@click.option("--mode", default="paper", type=click.Choice(["paper", "dry_run", "live"]),
               help="Execution mode")
 @click.option("--reason", default="manual", help="Reason for emergency withdrawal")
 @click.option("--yes", "confirmed", is_flag=True, help="Skip confirmation prompt")
 def emergency_withdraw(capital: float, mode: str, reason: str, confirmed: bool):
     """Emergency withdraw ALL positions immediately (bypasses cooldowns)."""
-    exec_mode = ExecutionMode.PAPER if mode == "paper" else ExecutionMode.DRY_RUN
+    mode_map = {"paper": ExecutionMode.PAPER, "dry_run": ExecutionMode.DRY_RUN, "live": ExecutionMode.LIVE}
+    exec_mode = mode_map[mode]
     asyncio.run(_emergency_withdraw(Decimal(str(capital)), exec_mode, reason, confirmed))
 
 
@@ -855,6 +897,20 @@ async def _emergency_withdraw(
                 record.simulated_gas_usd = Decimal("0.001")
                 portfolio.apply_execution(record)
                 record.status = ExecutionStatus.SUCCESS
+            elif mode == ExecutionMode.LIVE:
+                config = load_config()
+                rpc_url = config.get("rpc_url", "https://mainnet.base.org")
+                adapters, signer, sender = _build_live_context(config, rpc_url, Chain.BASE)
+                adapter = adapters.get(protocol)
+                if adapter:
+                    tx_receipt = await adapter.withdraw(amount, sender, signer)
+                    record.tx_hash = tx_receipt.tx_hash
+                    record.block_number = tx_receipt.block_number
+                    portfolio.apply_execution(record)
+                    record.status = ExecutionStatus.SUCCESS
+                else:
+                    record.status = ExecutionStatus.FAILED
+                    record.error = f"No adapter for {proto_key}"
             else:
                 record.tx_hash = f"emergency-dryrun-{record.id[:8]}"
                 record.block_number = 0
@@ -869,7 +925,7 @@ async def _emergency_withdraw(
                 f"${amount:,.2f}"
             )
 
-        if mode == ExecutionMode.PAPER:
+        if mode in (ExecutionMode.PAPER, ExecutionMode.LIVE):
             await portfolio.save_snapshot()
 
         click.echo()
@@ -1754,11 +1810,12 @@ print(json.dumps(result))
 @cli.command()
 @click.option("--interval", default=900, help="Scan interval in seconds (default: 900)")
 @click.option("--capital", default=10000, type=float, help="Total capital in USD")
-@click.option("--mode", default="paper", type=click.Choice(["paper", "dry_run"]),
+@click.option("--mode", default="paper", type=click.Choice(["paper", "dry_run", "live"]),
               help="Execution mode")
 def run(interval: int, capital: float, mode: str):
     """Start the yield agent loop (scan + allocate + execute + rebalance)."""
-    exec_mode = ExecutionMode.PAPER if mode == "paper" else ExecutionMode.DRY_RUN
+    mode_map = {"paper": ExecutionMode.PAPER, "dry_run": ExecutionMode.DRY_RUN, "live": ExecutionMode.LIVE}
+    exec_mode = mode_map[mode]
     asyncio.run(_run(interval, Decimal(str(capital)), exec_mode))
 
 
@@ -1776,6 +1833,12 @@ async def _run(interval: int, capital: Decimal, mode: ExecutionMode):
     )
     breakers = CircuitBreakers(config)
     monitor = HealthMonitor(breakers, scope)
+
+    # Build live context once at startup
+    live_kwargs = {}
+    if mode == ExecutionMode.LIVE:
+        adapters, signer, sender = _build_live_context(config, rpc_url, Chain.BASE)
+        live_kwargs = {"adapters": adapters, "signer": signer, "sender": sender}
 
     db = Database()
     await db.connect()
@@ -1844,7 +1907,7 @@ async def _run(interval: int, capital: Decimal, mode: ExecutionMode):
                     emergency_scope = SpendingScope(withdrawal_cooldown_secs=0)
                     emergency_executor = Executor(
                         mode=mode, db=db, portfolio=portfolio,
-                        scope=emergency_scope, gas_price=gas,
+                        scope=emergency_scope, gas_price=gas, **live_kwargs,
                     )
                     empty_plan = AllocationPlan(
                         allocations=[],
@@ -1913,7 +1976,7 @@ async def _run(interval: int, capital: Decimal, mode: ExecutionMode):
                 exec_log.log_step("execute", "started")
                 executor = Executor(
                     mode=mode, db=db, portfolio=portfolio,
-                    scope=scope, gas_price=gas,
+                    scope=scope, gas_price=gas, **live_kwargs,
                 )
                 records = await executor.execute_plan(plan, rates)
 

@@ -16,6 +16,7 @@ protocols:
     chain: base
     singleton_address: "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb"
     usdc_address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+    vault_address: "0xbEEF01735c132Ada46AA9aA4c54623cAA92A64CB"  # Steakhouse USDC (STEAKUSDC)
     defillama_slug: "morpho-v1"
 
   compound_v3:

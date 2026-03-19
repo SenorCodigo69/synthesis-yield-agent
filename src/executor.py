@@ -26,9 +26,12 @@ from src.models import (
     GasPrice,
     ProtocolName,
     SpendingScope,
+    TxReceipt,
     ValidatedRate,
 )
 from src.portfolio import Portfolio
+from src.protocols.base import ProtocolAdapter
+from src.protocols.tx_helpers import TransactionSigner
 from src.strategy.allocator import AllocationPlan
 
 logger = logging.getLogger(__name__)
@@ -74,10 +77,13 @@ class Executor:
         scope: SpendingScope,
         gas_price: GasPrice,
         eth_price_usd: Decimal = Decimal("3500"),
+        adapters: dict[ProtocolName, ProtocolAdapter] | None = None,
+        signer: TransactionSigner | None = None,
+        sender: str | None = None,
     ):
-        if mode == ExecutionMode.LIVE:
-            raise NotImplementedError(
-                "Live mode not implemented — use paper or dry_run"
+        if mode == ExecutionMode.LIVE and (not adapters or not signer or not sender):
+            raise ValueError(
+                "Live mode requires adapters, signer, and sender address"
             )
         self.mode = mode
         self.db = db
@@ -85,6 +91,9 @@ class Executor:
         self.scope = scope
         self.gas_price = gas_price
         self.eth_price_usd = eth_price_usd
+        self._adapters = adapters or {}
+        self._signer = signer
+        self._sender = sender
 
     async def execute_plan(
         self,
@@ -227,8 +236,8 @@ class Executor:
                 await self._execute_paper(record)
             elif self.mode == ExecutionMode.DRY_RUN:
                 await self._execute_dry_run(record)
-            else:
-                raise ExecutionError("Live mode not yet implemented — use paper or dry_run")
+            elif self.mode == ExecutionMode.LIVE:
+                await self._execute_live(record)
 
         except (CooldownError, HealthCheckError, InsufficientReserveError) as e:
             record.status = ExecutionStatus.SKIPPED
@@ -328,6 +337,56 @@ class Executor:
             f"[DRY-RUN] Would {record.action.value} {record.protocol.value}: "
             f"${record.amount_usd:,.2f} | est gas: ${gas_cost:.4f} | "
             f"{record.reasoning}"
+        )
+
+    async def _execute_live(self, record: ExecutionRecord) -> None:
+        """Live on-chain execution via protocol adapters."""
+        adapter = self._adapters.get(record.protocol)
+        if not adapter:
+            raise ExecutionError(
+                f"No adapter for {record.protocol.value} — cannot execute live"
+            )
+
+        assert self._signer is not None
+        assert self._sender is not None
+
+        if record.action == ActionType.SUPPLY:
+            # Approve first, then supply
+            logger.info(
+                f"[LIVE] Approving {record.protocol.value}: "
+                f"${record.amount_usd:,.2f} USDC"
+            )
+            await adapter.approve(record.amount_usd, self._sender, self._signer)
+
+            logger.info(
+                f"[LIVE] Supplying {record.protocol.value}: "
+                f"${record.amount_usd:,.2f} USDC"
+            )
+            tx_receipt: TxReceipt = await adapter.supply(
+                record.amount_usd, self._sender, self._signer,
+            )
+        elif record.action == ActionType.WITHDRAW:
+            logger.info(
+                f"[LIVE] Withdrawing {record.protocol.value}: "
+                f"${record.amount_usd:,.2f} USDC"
+            )
+            tx_receipt = await adapter.withdraw(
+                record.amount_usd, self._sender, self._signer,
+            )
+        else:
+            raise ExecutionError(f"Unsupported action for live mode: {record.action}")
+
+        record.tx_hash = tx_receipt.tx_hash
+        record.block_number = tx_receipt.block_number
+
+        # Update portfolio to match on-chain state
+        self.portfolio.apply_execution(record)
+        record.status = ExecutionStatus.SUCCESS
+
+        logger.info(
+            f"[LIVE] {record.action.value} {record.protocol.value}: "
+            f"${record.amount_usd:,.2f} | tx: {record.tx_hash} | "
+            f"block: {record.block_number}"
         )
 
     def _estimate_gas_usd(self, gas_units: int) -> Decimal:

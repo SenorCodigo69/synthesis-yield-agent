@@ -5,6 +5,7 @@ import uuid
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 import pytest_asyncio
@@ -34,6 +35,7 @@ from src.models import (
     DataSource,
 )
 from src.portfolio import Portfolio
+from src.protocols.tx_helpers import TransactionSigner
 from src.strategy.allocator import AllocationPlan, ScoredProtocol, compute_allocations
 from src.strategy.net_apy import NetAPY
 from src.strategy.risk_scorer import RiskScore
@@ -679,6 +681,94 @@ class TestExecutor:
         assert records[0].protocol == ProtocolName.AAVE_V3
         assert records[1].action == ActionType.SUPPLY
         assert records[1].protocol == ProtocolName.MORPHO
+
+    @pytest.mark.asyncio
+    async def test_live_execution_calls_adapter(self, db, gas, scope, sample_rates, sample_plan):
+        """Live mode calls protocol adapter supply/approve and records real tx hash."""
+        portfolio = Portfolio(Decimal("10000"), db)
+
+        mock_receipt = MagicMock()
+        mock_receipt.tx_hash = "0xabc123"
+        mock_receipt.block_number = 99999
+
+        mock_adapter = AsyncMock()
+        mock_adapter.supply.return_value = mock_receipt
+        mock_adapter.approve.return_value = mock_receipt
+
+        adapters = {ProtocolName.AAVE_V3: mock_adapter, ProtocolName.MORPHO: mock_adapter}
+        signer = MagicMock(spec=TransactionSigner)
+        signer.key = "0x" + "ab" * 32
+
+        executor = Executor(
+            mode=ExecutionMode.LIVE, db=db, portfolio=portfolio,
+            scope=scope, gas_price=gas,
+            adapters=adapters, signer=signer, sender="0x1234",
+        )
+        records = await executor.execute_plan(sample_plan, sample_rates)
+
+        assert len(records) > 0
+        assert all(r.status == ExecutionStatus.SUCCESS for r in records)
+        assert all(r.tx_hash == "0xabc123" for r in records)
+        assert portfolio.allocated_usd > 0
+        # Verify adapters were called
+        assert mock_adapter.approve.call_count > 0
+        assert mock_adapter.supply.call_count > 0
+
+    @pytest.mark.asyncio
+    async def test_live_requires_adapters(self, db, gas, scope):
+        """Live mode raises if adapters/signer/sender not provided."""
+        portfolio = Portfolio(Decimal("10000"), db)
+        with pytest.raises(ValueError, match="Live mode requires"):
+            Executor(
+                mode=ExecutionMode.LIVE, db=db, portfolio=portfolio,
+                scope=scope, gas_price=gas,
+            )
+
+    @pytest.mark.asyncio
+    async def test_live_withdraw_calls_adapter(self, db, gas, sample_rates):
+        """Live mode calls adapter.withdraw for position reductions."""
+        scope = SpendingScope(withdrawal_cooldown_secs=0)
+        portfolio = Portfolio(Decimal("10000"), db)
+        portfolio.positions["aave-v3"] = Decimal("8000")
+
+        mock_receipt = MagicMock()
+        mock_receipt.tx_hash = "0xwithdraw"
+        mock_receipt.block_number = 100000
+
+        mock_adapter = AsyncMock()
+        mock_adapter.withdraw.return_value = mock_receipt
+        mock_adapter.supply.return_value = mock_receipt
+        mock_adapter.approve.return_value = mock_receipt
+
+        adapters = {ProtocolName.AAVE_V3: mock_adapter, ProtocolName.MORPHO: mock_adapter}
+        signer = MagicMock(spec=TransactionSigner)
+        signer.key = "0x" + "ab" * 32
+
+        plan = AllocationPlan(
+            allocations=[
+                Allocation(
+                    protocol=ProtocolName.AAVE_V3, chain=Chain.BASE,
+                    amount_usd=Decimal("4000"), target_pct=Decimal("0.40"),
+                    actual_pct=Decimal("0"),
+                ),
+            ],
+            scored_protocols=[],
+            total_allocated_usd=Decimal("4000"),
+            total_capital_usd=Decimal("10000"),
+            reserve_usd=Decimal("6000"),
+        )
+
+        executor = Executor(
+            mode=ExecutionMode.LIVE, db=db, portfolio=portfolio,
+            scope=scope, gas_price=gas,
+            adapters=adapters, signer=signer, sender="0x1234",
+        )
+        records = await executor.execute_plan(plan, sample_rates)
+
+        withdrawals = [r for r in records if r.action == ActionType.WITHDRAW]
+        assert len(withdrawals) == 1
+        assert withdrawals[0].tx_hash == "0xwithdraw"
+        assert mock_adapter.withdraw.call_count == 1
 
     @pytest.mark.asyncio
     async def test_execution_persisted_to_db(self, db, gas, scope, sample_rates, sample_plan):
