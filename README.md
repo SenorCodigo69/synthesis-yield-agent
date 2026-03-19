@@ -292,6 +292,43 @@ Every data point is cross-validated before any capital moves:
 | Uniswap (V2/V3/V4/UniswapX) | Base | Swap routing |
 | Lido stETH Treasury | Ethereum | Active — [companion repo](https://github.com/SenorCodigo69/synthesis-steth-treasury) |
 
+## Assessment Protocol — How the Agent Improves
+
+The agent continuously evaluates its own performance and adjusts strategy based on outcomes. This isn't a static bot — it's a feedback loop.
+
+### Performance Metrics (tracked every cycle)
+
+| Metric | Source | Purpose |
+|---|---|---|
+| Net yield earned | Portfolio DB | Is the agent actually making money after gas? |
+| Gas cost per move | Execution log | Are rebalances worth the cost? |
+| Rate prediction accuracy | Rate history vs actuals | Did the agent pick the right protocol? |
+| Time in optimal protocol | Allocation history | How fast does it react to rate shifts? |
+| Circuit breaker trips | Breaker log | How often does the market threaten positions? |
+| LP win rate by regime | `lp_learner.db` | Which regimes produce profitable LP positions? |
+
+### What Triggers Adjustments
+
+1. **Rate-based rebalancing** — If protocol A's risk-adjusted yield exceeds protocol B's by >1% for 6+ consecutive hours, the agent moves capital. Short-lived spikes are ignored to avoid churn.
+2. **Risk score drift** — Protocol risk scores update every cycle (TVL, utilization, audit status). If a protocol's score degrades past the threshold, the agent exits before problems materialize.
+3. **Gas amortization** — The agent won't rebalance if the projected yield gain over the hold period doesn't exceed the gas cost of moving. Small balances naturally rebalance less often.
+4. **LP regime learning** — The concentrated LP optimizer tracks win/loss outcomes per market regime (BULL/BEAR/SIDEWAYS). Over time, it adjusts tick range width multipliers: tightening ranges that historically earned more fees, widening ranges that suffered IL.
+5. **Circuit breaker feedback** — After an emergency withdrawal, the agent won't re-enter the protocol until all breaker conditions have cleared for a full cycle. False alarms are logged for threshold tuning.
+
+### Feedback Loop
+
+```
+  Execute → Measure outcome → Compare to prediction → Adjust parameters
+     ↑                                                        |
+     └────────────────────────────────────────────────────────┘
+```
+
+- **Yield allocation**: outcome = actual APY earned vs predicted net APY at entry
+- **LP positions**: outcome = fees earned vs IL incurred, tracked per regime
+- **Swap decisions**: outcome = token price movement after swap vs AI confidence score
+
+All outcomes are persisted in SQLite — the agent's decisions today are informed by every decision it made before.
+
 ## Security
 
 **8 security audits completed** — all findings fixed:
