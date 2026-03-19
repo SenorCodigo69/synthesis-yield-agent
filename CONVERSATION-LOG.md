@@ -826,4 +826,54 @@ Each entry should capture:
 
 ---
 
+## Day 17 — Live Execution Mode + Server Deploy (March 19, 2026)
+
+### Session: Hackathon Day 17 Build (Session 50)
+
+**Participants:** Human (project lead) + Claude Opus 4.6 (via claude-code)
+
+**Key Decisions:**
+- Yield agent must run live on-chain, not just paper mode — "everything has to be live"
+- Deploy live agent to Hetzner server as systemd service alongside trading agent
+- Add assessment protocol to README — show judges the agent improves over time
+- Update all 3 READMEs with latest stats before submission
+
+**Pivots:**
+- Discovered the Executor class had `raise NotImplementedError("Live mode not implemented")` blocking all on-chain execution in the autonomous loop — despite protocol adapters being fully capable. Removed the block and wired live mode end-to-end
+- First Morpho supply failed with nonce collision (approve + supply racing) — added 2s delay between approve and supply txs
+- Server portfolio DB was out of sync with on-chain state (stale paper positions) — had to reset to match actual balances before deploying
+
+**Breakthroughs:**
+- **Full live execution mode in one session:** `--mode live` on execute, run, and emergency-withdraw. Agent now autonomously manages real USDC across Aave V3 + Morpho Blue on Base mainnet
+- **Live on-chain transactions executed:** Aave withdraw (`0x727d1a...`), Morpho approve (`0x466a9b...`), Morpho supply (`0x813aab...`) — all on Base mainnet
+- **24/7 live agent deployed to Hetzner:** systemd service with auto-restart, scanning every 15 minutes, rebalancing based on risk-adjusted yield
+- **First autonomous rebalance on server:** Agent withdrew $6.08 from Aave to equalize allocation toward higher-yield Morpho
+
+**Agent Contributions:**
+- Built live execution path in Executor: `_execute_live()` with approve → supply and withdraw flows
+- Added `_build_live_context()` helper: wires up protocol adapters + TransactionSigner from env
+- Updated CLI: `--mode live` option on execute, run, emergency-withdraw commands
+- Added Morpho STEAKUSDC vault address to config
+- Fixed nonce collision between approve and supply transactions
+- 3 new tests for live executor (mock adapters, validation guard, withdraw flow)
+- Updated all 3 hackathon READMEs (test counts, DynamicFeeHook, security audits, deployment status)
+- Added assessment protocol section to yield agent README
+- Deployed to Hetzner: code sync, portfolio DB reset, systemd service update, live verification
+- 374 tests passing (3 new)
+
+**Human Contributions:**
+- "what do you mean it has only been in paper mode?" — caught that the agent wasn't actually live
+- "everything has to be live" — pushed for full end-to-end live execution
+- "deploy to hetzner" — committed to 24/7 autonomous operation
+- "do we need to write an assessment protocol" — identified the gap in demonstrating agent self-improvement
+
+**Context:**
+- Yield agent now managing $22.66 USDC live on Base ($11.88 Aave + $5.80 Morpho + $4.98 reserve)
+- 7 contracts deployed across 2 chains (6 Base + 1 Ethereum)
+- 374 yield agent tests, 193 ZK agent tests, 27 stETH tests = 594 total
+- Agent running 24/7 on Hetzner with live rebalancing
+- 3 days until hackathon deadline (March 22)
+
+---
+
 <!-- Add new entries below this line -->
