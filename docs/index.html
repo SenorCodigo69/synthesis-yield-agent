@@ -306,17 +306,25 @@
 
     <!-- Hero -->
     <div class="hero">
+      <div style="margin-bottom:20px;">
+        <span style="font-size:2.4rem;">&#x1f916;</span>
+      </div>
       <h1>Synthesis <span>Yield Agent</span></h1>
-      <p class="tagline">Autonomous DeFi agent with ZK privacy on Base</p>
+      <p class="tagline">Autonomous DeFi agent that earns yield, proves privacy, and gets smarter over time</p>
       <div class="badges">
-        <span class="badge live">Live on Base Mainnet</span>
+        <span class="badge live">Live on Base + Ethereum</span>
         <span class="badge zk">ZK Privacy (Groth16)</span>
         <span class="badge uni">Uniswap V3 LP + V4 Hooks</span>
+        <span class="badge" style="background:rgba(108,92,231,0.15);color:#a29bfe;border:1px solid rgba(162,155,254,0.3);">Self-Improving</span>
       </div>
-      <p style="margin-bottom: 24px;"><a href="dashboard.html" style="color: var(--accent2); font-size: 0.9rem; font-weight: 600;">View Live Dashboard &rarr;</a></p>
-      <p style="color: var(--muted); font-size: 0.85rem;">
+      <div style="display:flex;gap:16px;justify-content:center;margin-bottom:24px;">
+        <a href="dashboard.html" style="background:var(--accent);color:white;padding:10px 24px;border-radius:6px;font-size:0.85rem;font-weight:600;text-decoration:none;">Live Dashboard</a>
+        <a href="https://github.com/SenorCodigo69/synthesis-yield-agent" target="_blank" style="background:var(--surface);color:var(--text);padding:10px 24px;border-radius:6px;font-size:0.85rem;font-weight:600;border:1px solid var(--border);text-decoration:none;">GitHub</a>
+      </div>
+      <p style="color: var(--muted); font-size: 0.85rem; max-width: 600px; margin: 0 auto;">
         Two AI agents, one pipeline. The Yield Agent decides <em>what</em> to do.
-        The ZK Agent proves it's <em>authorized</em> to do it. No human in the loop.
+        The ZK Agent proves it's <em>authorized</em> to do it. The agent tracks every decision,
+        compares predicted vs actual yield, and adjusts its own risk weights. No human in the loop.
       </p>
     </div>
 
@@ -419,32 +427,73 @@
 
     <!-- Live Stats -->
     <section>
-      <h2>Live on Base Mainnet</h2>
+      <h2>Live on Base + Ethereum</h2>
       <div class="stats">
         <div class="stat">
-          <div class="stat-value">6</div>
-          <div class="stat-label">Contracts (Base + Ethereum)</div>
+          <div class="stat-value">7</div>
+          <div class="stat-label">Contracts Deployed</div>
         </div>
         <div class="stat">
           <div class="stat-value">2</div>
-          <div class="stat-label">ERC-8004 Agent IDs</div>
+          <div class="stat-label">Chains (Base + Ethereum)</div>
         </div>
         <div class="stat">
-          <div class="stat-value">380</div>
+          <div class="stat-value">594</div>
           <div class="stat-label">Tests Passing</div>
         </div>
         <div class="stat">
-          <div class="stat-value">13</div>
+          <div class="stat-value">14</div>
           <div class="stat-label">Security Audits</div>
         </div>
         <div class="stat">
-          <div class="stat-value">#4816034</div>
-          <div class="stat-label">Live LP Position (WETH-USDC)</div>
+          <div class="stat-value">24/7</div>
+          <div class="stat-label">Live Agent on Hetzner</div>
         </div>
         <div class="stat">
-          <div class="stat-value">3</div>
-          <div class="stat-label">Live Uniswap Swaps</div>
+          <div class="stat-value">$22.66</div>
+          <div class="stat-label">Live USDC Under Management</div>
         </div>
+      </div>
+    </section>
+
+    <!-- Self-Improvement -->
+    <section>
+      <h2>Self-Improving Agent</h2>
+      <p style="color:var(--muted);font-size:0.85rem;margin-bottom:20px;">
+        The agent doesn't just execute — it learns. Every allocation decision is tracked, measured against reality, and fed back into future decisions.
+      </p>
+      <div class="pipeline">
+        <div class="step">
+          <span class="step-num" style="color:var(--accent2);">&#x2799;</span>
+          <div>
+            <div class="step-title">Record Decision</div>
+            <div class="step-desc">Every supply/withdraw is logged with predicted APY, risk score, protocol TVL, and utilization at time of decision</div>
+          </div>
+        </div>
+        <div class="step">
+          <span class="step-num" style="color:var(--accent2);">&#x2799;</span>
+          <div>
+            <div class="step-title">Measure Outcome</div>
+            <div class="step-desc">After each cycle, compare actual yield earned vs what was predicted. Track gas costs, hold duration, profitability</div>
+          </div>
+        </div>
+        <div class="step">
+          <span class="step-num" style="color:var(--accent2);">&#x2799;</span>
+          <div>
+            <div class="step-title">Evaluate Accuracy</div>
+            <div class="step-desc">Per-protocol accuracy: win rate, APY prediction error, overestimate frequency. Protocols that consistently over-promise get flagged</div>
+          </div>
+        </div>
+        <div class="step">
+          <span class="step-num" style="color:var(--accent2);">&#x2799;</span>
+          <div>
+            <div class="step-title">Adjust Weights</div>
+            <div class="step-desc">Risk scoring weights auto-adjust: penalize protocols that under-deliver (+15% risk), reward consistent performers (-10% risk). LP tick ranges narrow or widen based on regime win rates</div>
+          </div>
+        </div>
+      </div>
+      <div style="margin-top:16px;text-align:center;">
+        <a href="dashboard.html" style="color:var(--accent2);font-size:0.85rem;">View learning stats on the dashboard &rarr;</a>
       </div>
     </section>
 
@@ -507,11 +556,11 @@
         <span class="comment"># AI-powered swap recommendation</span><br>
         <span class="cmd">python -m src swap --ai</span><br>
         <br>
-        <span class="comment"># LP position management</span><br>
-        <span class="cmd">python -m src lp --action status</span><br>
+        <span class="comment"># Run the live agent loop</span><br>
+        <span class="cmd">python -m src run --mode live --capital 50</span><br>
         <br>
-        <span class="comment"># Full unified demo (ZK + Yield + V4 Hook)</span><br>
-        <span class="cmd">cd ../synthesis-zk-agent && python demo_full.py</span><br>
+        <span class="comment"># View learning stats — how the agent is improving</span><br>
+        <span class="cmd">python -m src learn</span><br>
       </div>
     </section>
 
@@ -525,11 +574,11 @@
         </a>
         <a href="https://github.com/SenorCodigo69/synthesis-yield-agent" class="link-card">
           <h3>Yield Agent</h3>
-          <p>AI yield optimizer — Aave, Morpho, Uniswap LP, swap reasoning, circuit breakers. 281 tests, 9 security audits.</p>
+          <p>AI yield optimizer — Aave, Morpho, Uniswap LP, concentrated LP, swap reasoning, self-improving learner. 391 tests, 8 security audits.</p>
         </a>
         <a href="https://github.com/SenorCodigo69/synthesis-zk-agent" class="link-card">
           <h3>ZK Agent</h3>
-          <p>Zero-knowledge privacy layer — Groth16 proofs, V4 hook, selective disclosure, policy commitments. 89 tests, 5 audits.</p>
+          <p>Zero-knowledge privacy layer — Groth16 proofs, V4 hooks (ZKGated + DynamicFee), selective disclosure. 193 tests, 4 audits.</p>
         </a>
         <a href="https://basescan.org/address/0x45eC09fB08B83f104F15f3709F4677736112c080" class="link-card">
           <h3>ZKGatedHook on BaseScan</h3>
@@ -570,7 +619,7 @@
     <!-- Footer -->
     <footer>
       <p class="hackathon">EF Synthesis Hackathon 2026</p>
-      <p>Built with Claude Code (claude-opus-4-6) across 45 sessions</p>
+      <p>Built with Claude Code (claude-opus-4-6) across 50 sessions</p>
       <p style="margin-top: 8px;">Tracks: "Agents that pay" + "Agents that keep secrets" + Uniswap "Agentic Finance" + "Let the Agent Cook" + Lido "stETH Agent Treasury"</p>
     </footer>
 
