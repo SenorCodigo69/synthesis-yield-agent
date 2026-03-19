@@ -51,6 +51,7 @@ from src.portfolio import Portfolio
 from src.protocols.aave_v3 import AaveV3Adapter
 from src.protocols.morpho_blue import MorphoBlueAdapter
 from src.protocols.tx_helpers import TransactionSigner
+from src.yield_learner import get_summary as get_learner_summary, record_yield_outcome
 from src.strategy.allocator import AllocationPlan, Allocation, compute_allocations
 from src.strategy.rebalancer import check_rebalance_triggers, RebalanceTracker
 
@@ -935,6 +936,78 @@ async def _emergency_withdraw(
         click.echo()
     finally:
         await db.close()
+
+
+# ── learn (yield learning stats) ─────────────────────────────────────────
+
+@cli.command()
+@click.option("--json-output", "use_json", is_flag=True, help="Output as JSON")
+def learn(use_json: bool):
+    """Show yield allocation learning stats — how the agent is improving."""
+    summary = get_learner_summary()
+
+    if use_json:
+        output = {
+            "total_decisions": summary.total_decisions,
+            "total_outcomes": summary.total_outcomes,
+            "overall_win_rate": summary.overall_win_rate,
+            "total_yield_usd": summary.total_yield_usd,
+            "total_gas_usd": summary.total_gas_usd,
+            "total_net_profit_usd": summary.total_net_profit_usd,
+            "improvement_score": summary.improvement_score,
+            "protocols": [
+                {
+                    "protocol": p.protocol,
+                    "win_rate": p.win_rate,
+                    "avg_predicted_apy": p.avg_predicted_apy,
+                    "avg_actual_apy": p.avg_actual_apy,
+                    "avg_apy_error": p.avg_apy_error,
+                    "overestimate_pct": p.overestimate_pct,
+                    "risk_weight_adjustment": p.risk_weight_adjustment,
+                    "reasoning": p.reasoning,
+                }
+                for p in summary.protocols
+            ],
+        }
+        click.echo(json.dumps(output, indent=2))
+        return
+
+    click.echo()
+    click.echo("  YIELD LEARNING — Agent Self-Improvement")
+    click.echo(f"  {'='*60}")
+    click.echo()
+    click.echo(f"  Decisions tracked:  {summary.total_decisions}")
+    click.echo(f"  Outcomes measured:  {summary.total_outcomes}")
+    click.echo(f"  Overall win rate:   {summary.overall_win_rate:.1f}%")
+    click.echo(f"  Total yield:        ${summary.total_yield_usd:.4f}")
+    click.echo(f"  Total gas:          ${summary.total_gas_usd:.4f}")
+    click.echo(f"  Net profit:         ${summary.total_net_profit_usd:.4f}")
+
+    # Improvement score
+    score = summary.improvement_score
+    if score > 55:
+        trend = "IMPROVING"
+    elif score < 45:
+        trend = "DEGRADING"
+    else:
+        trend = "STABLE"
+    click.echo(f"  Improvement score:  {score:.0f}/100 ({trend})")
+    click.echo()
+
+    if summary.protocols:
+        click.echo("  Protocol Accuracy:")
+        click.echo(f"  {'-'*60}")
+        for p in summary.protocols:
+            click.echo(
+                f"  {p.protocol:<15} win={p.win_rate:.0f}% | "
+                f"pred={p.avg_predicted_apy:.2f}% actual={p.avg_actual_apy:.2f}% "
+                f"err={p.avg_apy_error:+.2f}% | adj={p.risk_weight_adjustment:.2f}x"
+            )
+            click.echo(f"  {'':15} {p.reasoning}")
+        click.echo()
+    else:
+        click.echo("  No outcomes recorded yet — agent needs more cycles to learn.")
+        click.echo()
 
 
 # ── register (ERC-8004) ───────────────────────────────────────────────────

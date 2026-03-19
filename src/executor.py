@@ -34,6 +34,7 @@ from src.portfolio import Portfolio
 from src.protocols.base import ProtocolAdapter
 from src.protocols.tx_helpers import TransactionSigner
 from src.strategy.allocator import AllocationPlan
+from src.yield_learner import record_allocation
 
 logger = logging.getLogger(__name__)
 
@@ -251,6 +252,26 @@ class Executor:
 
         # Always log to database
         await self.db.insert_execution(record)
+
+        # Record successful supply decisions in yield learner
+        if (record.status in (ExecutionStatus.SUCCESS, ExecutionStatus.SIMULATED)
+                and record.action == ActionType.SUPPLY):
+            rate = rate_map.get(protocol)
+            try:
+                record.learner_decision_id = record_allocation(
+                    protocol=protocol.value,
+                    action="supply",
+                    predicted_apy=float(rate.apy_median) if rate else 0,
+                    risk_score=0,  # Will be enriched by caller if available
+                    risk_adjusted_apy=float(rate.apy_median) if rate else 0,
+                    amount_usd=float(amount),
+                    tvl_usd=float(rate.tvl_usd) if rate else None,
+                    utilization=float(rate.utilization) if rate else None,
+                    reasoning=reasoning,
+                )
+            except Exception as e:
+                logger.warning(f"Failed to record yield decision: {e}")
+
         return record
 
     async def _pre_execution_checks(
