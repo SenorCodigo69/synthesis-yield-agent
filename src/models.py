@@ -147,6 +147,7 @@ class ExecutionRecord:
     status: ExecutionStatus = ExecutionStatus.PENDING
     error: str | None = None
     timestamp: datetime = field(default_factory=lambda: datetime.now(tz=timezone.utc))
+    learner_decision_id: int | None = None
 
 
 @dataclass

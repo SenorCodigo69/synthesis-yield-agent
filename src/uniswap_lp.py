@@ -432,13 +432,10 @@ class UniswapLPAdapter:
         wallet = account.address
         tick_lower, tick_upper = full_range_ticks(fee)
 
-        # For full-range positions, the pool determines the actual token ratio
-        # based on the current price. We can't predict the exact split, so
-        # amount0Min/amount1Min = 0. The pool's own price mechanism + deadline
-        # protect against manipulation. Base L2 has negligible MEV risk.
-        # For concentrated positions (future Level 2), use proper slippage bounds.
-        amount0_min = 0
-        amount1_min = 0
+        # Apply slippage protection to full-range mints
+        slippage_factor = 1 - slippage_pct / 100
+        amount0_min = int(weth_amount * slippage_factor)
+        amount1_min = int(usdc_amount * slippage_factor)
 
         # Get deadline (current block timestamp + buffer)
         block = await self.w3.eth.get_block("latest")
@@ -789,14 +786,18 @@ class UniswapLPAdapter:
         block = await self.w3.eth.get_block("latest")
         deadline = block["timestamp"] + DEFAULT_DEADLINE_SECONDS
 
-        # Slippage protection for decreaseLiquidity:
-        # tokensOwed reflects uncollected fees (not principal). For full-range exits,
-        # the actual returned amounts depend on the pool's current price, which we
-        # can't predict without complex sqrt-price math. On Base L2 (negligible MEV),
-        # amount0Min/amount1Min = 0 with a tight deadline is acceptable.
-        # For production: simulate via eth_call first, then apply slippage to result.
-        amount0_min = 0
-        amount1_min = 0
+        # Simulate the decrease to get expected amounts, then apply slippage
+        try:
+            sim_result = await self._pm.functions.decreaseLiquidity((
+                token_id, position.liquidity, 0, 0, deadline,
+            )).call()
+            slippage_factor = 1 - slippage_pct / 100
+            amount0_min = int(sim_result[0] * slippage_factor)
+            amount1_min = int(sim_result[1] * slippage_factor)
+        except Exception:
+            # Fallback: 2% slippage on tokensOwed as best estimate
+            amount0_min = int(position.tokens_owed0 * 0.98)
+            amount1_min = int(position.tokens_owed1 * 0.98)
 
         decrease_params = (
             token_id,               # tokenId

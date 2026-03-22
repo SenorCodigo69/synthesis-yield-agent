@@ -48,10 +48,11 @@ USDC_PRICE_FLOOR = Decimal("0.50")
 USDC_PRICE_CEILING = Decimal("1.50")
 
 # Track consecutive failures — if too many, block new deposits
-_consecutive_failures = 0
-_last_successful_fetch = 0.0
 MAX_CONSECUTIVE_FAILURES = 3
 MAX_STALE_PRICE_SECONDS = 600  # 10 minutes
+
+# Encapsulated state (avoids module-level mutable globals for async safety)
+_state = {"consecutive_failures": 0, "last_successful_fetch": 0.0}
 
 
 async def fetch_usdc_price(session: aiohttp.ClientSession) -> Decimal:
@@ -65,21 +66,20 @@ async def fetch_usdc_price(session: aiohttp.ClientSession) -> Decimal:
     After MAX_CONSECUTIVE_FAILURES, returns a sentinel value (0.0)
     that the circuit breaker should treat as "unknown — block deposits".
     """
-    global _consecutive_failures, _last_successful_fetch
-
     price = await _fetch_onchain(session)
     if price is not None:
-        _consecutive_failures = 0
-        _last_successful_fetch = time.time()
+        _state["consecutive_failures"] = 0
+        _state["last_successful_fetch"] = time.time()
         return price
 
-    _consecutive_failures += 1
+    _state["consecutive_failures"] += 1
 
-    if _consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
-        stale_seconds = time.time() - _last_successful_fetch if _last_successful_fetch else float("inf")
+    if _state["consecutive_failures"] >= MAX_CONSECUTIVE_FAILURES:
+        last = _state["last_successful_fetch"]
+        stale_seconds = time.time() - last if last else float("inf")
         if stale_seconds > MAX_STALE_PRICE_SECONDS:
             logger.error(
-                f"USDC price source failed {_consecutive_failures}x consecutively, "
+                f"USDC price source failed {_state['consecutive_failures']}x consecutively, "
                 f"last success {stale_seconds:.0f}s ago — returning unknown price (blocks deposits)"
             )
             return Decimal("0")  # Sentinel: circuit breaker should block deposits

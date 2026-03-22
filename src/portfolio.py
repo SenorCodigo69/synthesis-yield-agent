@@ -118,7 +118,7 @@ class Portfolio:
         Returns the yield amount accrued.
         """
         position = self.positions.get(protocol, Decimal("0"))
-        if position <= 0 or apy_pct <= 0:
+        if position <= 0 or apy_pct <= 0 or hours <= 0:
             return Decimal("0")
 
         # yield = position * (apy / 100) * (hours / 8760)

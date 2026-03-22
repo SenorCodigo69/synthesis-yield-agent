@@ -28,7 +28,7 @@ from decimal import Decimal
 import aiohttp
 import click
 
-from src.circuit_breakers import CircuitBreakers, BreakerAction
+from src.circuit_breakers import CircuitBreakers
 from src.config import load_config, load_spending_scope
 from src.data.aggregator import fetch_validated_rates
 from src.data.gas import fetch_gas_onchain
@@ -100,7 +100,7 @@ def _build_live_context(config: dict, rpc_url: str, chain: Chain):
     import os
     from web3 import AsyncWeb3
 
-    private_key = os.environ.get("PRIVATE_KEY") or config.get("private_key")
+    private_key = os.environ.get("PRIVATE_KEY") or config.pop("_private_key", None)
     if not private_key:
         click.echo("  ERROR: PRIVATE_KEY env var required for live mode")
         sys.exit(1)
@@ -1026,7 +1026,7 @@ async def _register(network: str, rpc_url: str | None):
     from src.erc8004 import register_agent, AgentRegistration, REGISTRIES
 
     config = load_config()
-    private_key = config.get("private_key")
+    private_key = os.environ.get("PRIVATE_KEY") or config.pop("_private_key", None)
 
     if not private_key:
         click.echo("  Error: PRIVATE_KEY not set in .env — required for registration.")
@@ -1596,22 +1596,23 @@ async def _swap(direction: str | None, amount: float | None, use_ai: bool,
     usdc_balance = Decimal(str(usdc_raw)) / Decimal(10 ** USDC_DECIMALS)
     weth_balance = Decimal(str(weth_raw)) / Decimal(10 ** WETH_DECIMALS)
 
-    # Get ETH price for USD conversion
+    # Get ETH price from on-chain Chainlink feed (no external API dependency)
     eth_price = Decimal("0")
     try:
+        from src.depeg_monitor import _rpc_call, CHAINLINK_ETH_USD, LATEST_ROUND_SELECTOR, CHAINLINK_DECIMALS
         async with aiohttp.ClientSession() as session:
-            async with session.get(
-                "https://api.coingecko.com/api/v3/simple/price",
-                params={"ids": "ethereum", "vs_currencies": "usd"},
-                timeout=aiohttp.ClientTimeout(total=10),
-            ) as resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    eth_price = Decimal(str(data["ethereum"]["usd"]))
+            cl_result = await _rpc_call(session, CHAINLINK_ETH_USD, LATEST_ROUND_SELECTOR)
+            if cl_result and len(cl_result) >= 130:
+                answer_hex = cl_result[2 + 64:2 + 128]
+                raw_answer = int(answer_hex, 16)
+                if raw_answer >= 2**255:
+                    raw_answer -= 2**256
+                if raw_answer > 0:
+                    eth_price = Decimal(str(raw_answer)) / Decimal(10**CHAINLINK_DECIMALS)
     except Exception:
-        eth_price = Decimal("2000")  # Fallback estimate
+        pass
 
-    # S41-L1: Validate ETH price is positive (CoinGecko could return 0)
+    # Fallback if on-chain read failed
     if eth_price <= 0:
         eth_price = Decimal("2000")
 
@@ -2074,6 +2075,25 @@ async def _run(interval: int, capital: Decimal, mode: ExecutionMode):
                     exec_log.log_execution(
                         r.protocol.value, r.action.value, float(r.amount_usd), r.status.value,
                     )
+
+                # ── LEARN: Record outcomes for withdrawals ───────────
+                rate_map_learn = {r.protocol.value: r.apy_median for r in rates}
+                for r in records:
+                    if (r.action == ActionType.WITHDRAW
+                            and r.status in (ExecutionStatus.SUCCESS, ExecutionStatus.SIMULATED)
+                            and r.learner_decision_id):
+                        try:
+                            actual_apy = float(rate_map_learn.get(r.protocol.value, Decimal("0")))
+                            record_yield_outcome(
+                                decision_id=r.learner_decision_id,
+                                actual_apy=actual_apy,
+                                yield_earned_usd=float(total_yield),
+                                gas_spent_usd=float(r.gas_cost_usd or r.simulated_gas_usd),
+                                hold_hours=float((now - r.timestamp).total_seconds() / 3600) if r.timestamp else 0,
+                                exit_reason=r.reasoning or "rebalance",
+                            )
+                        except Exception as e:
+                            logger.warning(f"Failed to record yield outcome: {e}")
 
                 # ── REPORT: Log summary ───────────────────────────────
                 successful = sum(1 for r in records if r.status in (ExecutionStatus.SUCCESS, ExecutionStatus.SIMULATED))

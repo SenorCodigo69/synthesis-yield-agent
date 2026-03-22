@@ -42,10 +42,10 @@ class TestValidation:
 class TestFetchOnchain:
     @pytest.fixture(autouse=True)
     def reset_state(self):
-        """Reset module-level failure tracking between tests."""
+        """Reset failure tracking between tests."""
         import src.depeg_monitor as dm
-        dm._consecutive_failures = 0
-        dm._last_successful_fetch = 0.0
+        dm._state["consecutive_failures"] = 0
+        dm._state["last_successful_fetch"] = 0.0
 
     @pytest.mark.asyncio
     async def test_returns_price_on_success(self):
@@ -121,8 +121,8 @@ class TestFetchUsdcPrice:
     async def test_sentinel_after_max_failures(self):
         """After MAX_CONSECUTIVE_FAILURES with stale data, returns 0 (block deposits)."""
         import src.depeg_monitor as dm
-        dm._consecutive_failures = MAX_CONSECUTIVE_FAILURES - 1
-        dm._last_successful_fetch = 0.0  # never succeeded
+        dm._state["consecutive_failures"] = MAX_CONSECUTIVE_FAILURES - 1
+        dm._state["last_successful_fetch"] = 0.0  # never succeeded
 
         mock_session = AsyncMock()
         with patch("src.depeg_monitor._fetch_onchain", return_value=None):
@@ -132,13 +132,13 @@ class TestFetchUsdcPrice:
     @pytest.mark.asyncio
     async def test_resets_failures_on_success(self):
         import src.depeg_monitor as dm
-        dm._consecutive_failures = 5
+        dm._state["consecutive_failures"] = 5
 
         mock_session = AsyncMock()
         with patch("src.depeg_monitor._fetch_onchain", return_value=Decimal("1.0001")):
             price = await fetch_usdc_price(mock_session)
         assert price == Decimal("1.0001")
-        assert dm._consecutive_failures == 0
+        assert dm._state["consecutive_failures"] == 0
 
 
 class TestRpcCall:
