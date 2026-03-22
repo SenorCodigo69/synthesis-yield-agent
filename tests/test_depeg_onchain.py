@@ -100,8 +100,8 @@ class TestFetchUsdcPrice:
     @pytest.fixture(autouse=True)
     def reset_state(self):
         import src.depeg_monitor as dm
-        dm._consecutive_failures = 0
-        dm._last_successful_fetch = 0.0
+        dm._state["consecutive_failures"] = 0
+        dm._state["last_successful_fetch"] = 0.0
 
     @pytest.mark.asyncio
     async def test_returns_onchain_price(self):

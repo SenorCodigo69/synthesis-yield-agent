@@ -13,7 +13,7 @@ from web3.providers import AsyncHTTPProvider
 
 from src.models import Chain, DataSource, ProtocolName, YieldPool
 from src.protocols.abis import (
-    AAVE_POOL_ABI, COMPOUND_COMET_ABI, METAMORPHO_QUEUE_ABI,
+    AAVE_POOL_ABI, COMPOUND_COMET_ABI,
     MORPHO_BLUE_ABI, MORPHO_IRM_ABI, RAY,
 )
 
@@ -197,6 +197,15 @@ async def fetch_morpho_rate(
 
             # supply APY = borrowAPY * utilization * (1 - fee)
             rate_per_sec = borrow_rate_per_sec / Decimal(10**18)
+
+            # Sanity check: reject corrupt on-chain data before expensive exponentiation
+            if rate_per_sec > MAX_RATE_PER_SEC:
+                logger.error(
+                    f"Morpho on-chain rate {rate_per_sec} exceeds sanity cap "
+                    f"{MAX_RATE_PER_SEC} (~30% APY) — skipping market"
+                )
+                continue
+
             fee_pct = fee_raw / Decimal(10**18)
             supply_apy = (
                 ((1 + rate_per_sec) ** Decimal(str(SECONDS_PER_YEAR)) - 1)
