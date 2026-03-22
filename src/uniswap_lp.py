@@ -376,27 +376,25 @@ class UniswapLPAdapter:
             weth_contract = self.w3.eth.contract(
                 address=self.w3.to_checksum_address(WETH_BASE), abi=ERC20_ABI
             )
-            # Approve max uint256 to avoid repeated approvals
-            max_uint = 2**256 - 1
+            # Approve exact amount needed (not max_uint — limits exposure if contract is compromised)
             tx_hash = await self._build_sign_send(
-                weth_contract.functions.approve(pm_addr, max_uint),
+                weth_contract.functions.approve(pm_addr, weth_amount),
                 private_key,
             )
             tx_hashes.append(tx_hash)
-            logger.info(f"WETH approved: {tx_hash}")
+            logger.info(f"WETH approved ({weth_amount}): {tx_hash}")
 
         if usdc_allowance < usdc_amount:
             logger.info("Approving USDC for PositionManager...")
             usdc_contract = self.w3.eth.contract(
                 address=self.w3.to_checksum_address(USDC_BASE), abi=ERC20_ABI
             )
-            max_uint = 2**256 - 1
             tx_hash = await self._build_sign_send(
-                usdc_contract.functions.approve(pm_addr, max_uint),
+                usdc_contract.functions.approve(pm_addr, usdc_amount),
                 private_key,
             )
             tx_hashes.append(tx_hash)
-            logger.info(f"USDC approved: {tx_hash}")
+            logger.info(f"USDC approved ({usdc_amount}): {tx_hash}")
 
         return tx_hashes
 

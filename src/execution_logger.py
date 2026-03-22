@@ -194,7 +194,11 @@ class ExecutionLogger:
     # ── Persistence ──────────────────────────────────────────────────
 
     def _persist(self, cycle_entry: dict) -> None:
-        """Append cycle to log file, keeping bounded size."""
+        """Append cycle to log file, keeping bounded size.
+
+        Uses atomic write (write to temp + rename) to prevent corruption
+        if the process crashes mid-write.
+        """
         try:
             existing: list[dict] = []
             if self._path.exists():
@@ -211,7 +215,10 @@ class ExecutionLogger:
             if len(existing) > self.MAX_CYCLES:
                 existing = existing[-self.MAX_CYCLES:]
 
-            self._path.write_text(json.dumps(existing, indent=2, default=str))
+            # Atomic write: write to temp file, then rename
+            tmp_path = self._path.with_suffix(".tmp")
+            tmp_path.write_text(json.dumps(existing, indent=2, default=str))
+            tmp_path.rename(self._path)
         except Exception as e:
             logger.warning("ExecutionLogger: failed to persist cycle log: %s", e)
 
@@ -255,9 +262,12 @@ class ExecutionLogger:
 
 def _safe_serialize(data: dict) -> dict:
     """Sanitize data dict for JSON serialization — truncate large values."""
+    from decimal import Decimal
     out = {}
     for k, v in data.items():
-        if isinstance(v, str) and len(v) > 300:
+        if isinstance(v, Decimal):
+            out[k] = float(v)
+        elif isinstance(v, str) and len(v) > 300:
             out[k] = v[:300] + "..."
         elif isinstance(v, (int, float, bool, type(None))):
             out[k] = v

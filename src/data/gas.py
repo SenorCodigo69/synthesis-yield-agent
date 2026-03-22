@@ -57,7 +57,7 @@ async def fetch_gas_blocknative(
     try:
         url = "https://api.blocknative.com/gasprices/blockprices"
         headers = {"Authorization": api_key}
-        async with session.get(url, headers=headers) as resp:
+        async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=15)) as resp:
             resp.raise_for_status()
             data = await resp.json()
             block_prices = data.get("blockPrices", [{}])[0]

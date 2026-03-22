@@ -23,14 +23,14 @@ from web3 import AsyncWeb3
 
 from .lp_il_tracker import compute_il_report
 from .lp_learner import record_decision, record_outcome
-from .lp_optimizer import OptimizedRange, compute_range
+from .lp_optimizer import compute_range
 from .lp_rebalancer import check_rebalance, RebalanceDecision
-from .lp_signals import LPSignals, compute_signals, store_snapshot, read_pool_price
+from .lp_signals import LPSignals, compute_signals
 from .uniswap_lp import (
-    UniswapLPAdapter, MintResult, ExitResult,
+    UniswapLPAdapter,
     WETH_DECIMALS, USDC_DECIMALS, DEFAULT_FEE,
 )
-from . import lp_tick_math as tm
+from .protocols.tx_helpers import TransactionSigner
 
 logger = logging.getLogger(__name__)
 
@@ -72,8 +72,8 @@ class LPManager:
         db_path: Path | None = None,
     ):
         self.adapter = UniswapLPAdapter(w3)
-        self.private_key = private_key
-        self.wallet = Account.from_key(private_key).address
+        self._signer = TransactionSigner(private_key)
+        self.wallet = Account.from_key(self._signer.key).address
         self.fee = fee
         self.db_path = db_path
         self.position: ManagedPosition | None = None
@@ -141,7 +141,7 @@ class LPManager:
 
         # Mint concentrated position
         result = await self.adapter.mint_concentrated(
-            private_key=self.private_key,
+            private_key=self._signer.key,
             weth_amount=weth_raw,
             usdc_amount=usdc_raw,
             tick_lower=opt.tick_lower,
@@ -222,23 +222,39 @@ class LPManager:
         old_token_id = pos.token_id
         old_decision_id = pos.decision_id
         self.position = None  # Clear immediately — if mint fails, next cycle sees "no position"
-        exit_result = await self.adapter.exit_position(self.private_key, old_token_id)
+        exit_result = await self.adapter.exit_position(self._signer.key, old_token_id)
 
         weth_out = exit_result.amount0 + exit_result.fees0
         usdc_out = exit_result.amount1 + exit_result.fees1
 
-        # Record outcome for learning loop
+        # Record outcome for learning loop (with IL computation)
         if old_decision_id:
             fees_weth = exit_result.fees0 / 10**18
             fees_usdc = exit_result.fees1 / 10**6
             fees_usd = fees_weth * signals.current_price + fees_usdc
             hold_hours = (time.time() - pos.minted_at) / 3600
+
+            # Compute IL for learning accuracy
+            il_pct = 0.0
+            try:
+                il_report = compute_il_report(
+                    entry_price=pos.entry_price,
+                    current_price=signals.current_price,
+                    tick_lower=pos.tick_lower,
+                    tick_upper=pos.tick_upper,
+                )
+                il_pct = il_report.il_pct
+            except Exception as e:
+                logger.warning("IL computation failed: %s", e)
+
             record_outcome(
                 decision_id=old_decision_id,
                 exit_price=signals.current_price,
                 fees_weth=fees_weth, fees_usdc=fees_usdc, fees_usd=fees_usd,
                 hold_duration_hours=hold_hours,
                 rebalance_reason=decision.reason,
+                il_pct=il_pct,
+                net_pnl_usd=fees_usd * (1 - il_pct),
                 db_path=self.db_path,
             )
 
@@ -266,7 +282,7 @@ class LPManager:
             return CycleResult(action="exit", details=f"Exited #{pos.token_id}, no tokens to re-deploy")
 
         mint_result = await self.adapter.mint_concentrated(
-            private_key=self.private_key,
+            private_key=self._signer.key,
             weth_amount=weth_raw,
             usdc_amount=usdc_raw,
             tick_lower=new_range.tick_lower,

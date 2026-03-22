@@ -14,7 +14,7 @@ from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 from enum import Enum
 
-from src.models import Allocation, GasPrice, SpendingScope, ValidatedRate
+from src.models import GasPrice, SpendingScope, ValidatedRate
 from src.strategy.allocator import AllocationPlan
 
 logger = logging.getLogger(__name__)

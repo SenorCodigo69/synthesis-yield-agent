@@ -76,7 +76,8 @@ class CompoundV3Adapter(ProtocolAdapter):
             )
             return Decimal("0")
 
-        apy = ((1 + rate) ** SECONDS_PER_YEAR - 1) * 100
+        # Use float for exponentiation (Decimal ** 31M is extremely slow)
+        apy = Decimal(str(((1 + float(rate)) ** float(SECONDS_PER_YEAR) - 1) * 100))
         return apy
 
     async def get_utilization(self) -> Decimal:

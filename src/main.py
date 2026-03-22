@@ -52,7 +52,7 @@ from src.protocols.aave_v3 import AaveV3Adapter
 from src.protocols.morpho_blue import MorphoBlueAdapter
 from src.protocols.tx_helpers import TransactionSigner
 from src.yield_learner import get_summary as get_learner_summary, record_yield_outcome
-from src.strategy.allocator import AllocationPlan, Allocation, compute_allocations
+from src.strategy.allocator import AllocationPlan, compute_allocations
 from src.strategy.rebalancer import check_rebalance_triggers, RebalanceTracker
 
 logging.basicConfig(
