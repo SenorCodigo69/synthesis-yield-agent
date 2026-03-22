@@ -206,6 +206,101 @@ ERC4626_ABI = [
     },
 ]
 
+# Morpho Blue singleton — market data + IRM reads
+MORPHO_BLUE_ABI = [
+    {
+        "inputs": [{"name": "id", "type": "bytes32"}],
+        "name": "market",
+        "outputs": [
+            {"name": "totalSupplyAssets", "type": "uint128"},
+            {"name": "totalSupplyShares", "type": "uint128"},
+            {"name": "totalBorrowAssets", "type": "uint128"},
+            {"name": "totalBorrowShares", "type": "uint128"},
+            {"name": "lastUpdate", "type": "uint128"},
+            {"name": "fee", "type": "uint128"},
+        ],
+        "stateMutability": "view",
+        "type": "function",
+    },
+    {
+        "inputs": [{"name": "id", "type": "bytes32"}],
+        "name": "idToMarketParams",
+        "outputs": [
+            {"name": "loanToken", "type": "address"},
+            {"name": "collateralToken", "type": "address"},
+            {"name": "oracle", "type": "address"},
+            {"name": "irm", "type": "address"},
+            {"name": "lltv", "type": "uint256"},
+        ],
+        "stateMutability": "view",
+        "type": "function",
+    },
+    {
+        "inputs": [{"name": "id", "type": "bytes32"}, {"name": "user", "type": "address"}],
+        "name": "position",
+        "outputs": [
+            {"name": "supplyShares", "type": "uint256"},
+            {"name": "borrowShares", "type": "uint128"},
+            {"name": "collateral", "type": "uint128"},
+        ],
+        "stateMutability": "view",
+        "type": "function",
+    },
+]
+
+# Morpho AdaptiveCurveIrm — borrow rate view
+MORPHO_IRM_ABI = [
+    {
+        "inputs": [
+            {
+                "components": [
+                    {"name": "loanToken", "type": "address"},
+                    {"name": "collateralToken", "type": "address"},
+                    {"name": "oracle", "type": "address"},
+                    {"name": "irm", "type": "address"},
+                    {"name": "lltv", "type": "uint256"},
+                ],
+                "name": "marketParams",
+                "type": "tuple",
+            },
+            {
+                "components": [
+                    {"name": "totalSupplyAssets", "type": "uint128"},
+                    {"name": "totalSupplyShares", "type": "uint128"},
+                    {"name": "totalBorrowAssets", "type": "uint128"},
+                    {"name": "totalBorrowShares", "type": "uint128"},
+                    {"name": "lastUpdate", "type": "uint128"},
+                    {"name": "fee", "type": "uint128"},
+                ],
+                "name": "market",
+                "type": "tuple",
+            },
+        ],
+        "name": "borrowRateView",
+        "outputs": [{"name": "", "type": "uint256"}],
+        "stateMutability": "view",
+        "type": "function",
+    },
+]
+
+# MetaMorpho vault — supply queue for market discovery
+METAMORPHO_QUEUE_ABI = [
+    {
+        "inputs": [],
+        "name": "supplyQueueLength",
+        "outputs": [{"name": "", "type": "uint256"}],
+        "stateMutability": "view",
+        "type": "function",
+    },
+    {
+        "inputs": [{"name": "", "type": "uint256"}],
+        "name": "supplyQueue",
+        "outputs": [{"name": "", "type": "bytes32"}],
+        "stateMutability": "view",
+        "type": "function",
+    },
+]
+
 # USDC uses 6 decimals
 USDC_DECIMALS = 6
 

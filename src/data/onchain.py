@@ -12,7 +12,10 @@ from web3 import AsyncWeb3
 from web3.providers import AsyncHTTPProvider
 
 from src.models import Chain, DataSource, ProtocolName, YieldPool
-from src.protocols.abis import AAVE_POOL_ABI, COMPOUND_COMET_ABI, RAY
+from src.protocols.abis import (
+    AAVE_POOL_ABI, COMPOUND_COMET_ABI, METAMORPHO_QUEUE_ABI,
+    MORPHO_BLUE_ABI, MORPHO_IRM_ABI, RAY,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +33,21 @@ RPC_REQUEST_TIMEOUT = 15  # seconds
 
 # Max rate per second (~30% APY) — anything above is corrupt on-chain data
 MAX_RATE_PER_SEC = Decimal("1e-8")
+
+# Morpho Blue — same singleton address on all EVM chains
+MORPHO_ADDRESSES = {
+    Chain.BASE: {
+        "morpho_singleton": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
+        # Known USDC markets — read directly from the Morpho singleton,
+        # no vault abstraction needed. IDs computed from MarketParams.
+        "usdc_market_ids": [
+            # USDC/WETH 86% LLTV — largest ($56M+ supply)
+            "0x8793cf302b8ffd655ab97bd1c695dbd967807e8367a65cb2f4edaf1380ba1bda",
+            # USDC/cbETH
+            "0xdba352d93a64b17c71104cbddc6aef85cd432322a1446b5b65163cbbc615cd0c",
+        ],
+    }
+}
 
 
 async def create_web3(rpc_url: str) -> AsyncWeb3:
@@ -129,6 +147,97 @@ async def fetch_compound_rate(
         return None
 
 
+async def fetch_morpho_rate(
+    w3: AsyncWeb3,
+    chain: Chain = Chain.BASE,
+) -> YieldPool | None:
+    """Fetch Morpho Blue supply rate directly on-chain.
+
+    Reads market state from the Morpho Blue singleton, then calls the
+    AdaptiveCurveIrm to get the borrow rate per second. Computes supply
+    APY as: borrowAPY * utilization * (1 - fee), weighted across markets.
+    """
+    try:
+        addrs = MORPHO_ADDRESSES[chain]
+        morpho = w3.eth.contract(
+            address=w3.to_checksum_address(addrs["morpho_singleton"]),
+            abi=MORPHO_BLUE_ABI,
+        )
+
+        total_supply = Decimal("0")
+        weighted_apy = Decimal("0")
+        markets_read = 0
+
+        for market_id_hex in addrs["usdc_market_ids"]:
+            market_id = bytes.fromhex(market_id_hex[2:])
+
+            # Get market state from Morpho singleton
+            market_data = await morpho.functions.market(market_id).call()
+            total_supply_assets = Decimal(market_data[0])
+            total_borrow_assets = Decimal(market_data[2])
+            fee_raw = Decimal(market_data[5])
+
+            if total_supply_assets == 0:
+                continue
+
+            utilization = total_borrow_assets / total_supply_assets
+
+            # Get market params to find the IRM address
+            params = await morpho.functions.idToMarketParams(market_id).call()
+            irm_address = params[3]
+
+            # Call IRM.borrowRateView(marketParams, market) for borrow rate/sec
+            irm = w3.eth.contract(
+                address=w3.to_checksum_address(irm_address),
+                abi=MORPHO_IRM_ABI,
+            )
+            borrow_rate_per_sec = Decimal(
+                await irm.functions.borrowRateView(params, market_data).call()
+            )
+
+            # supply APY = borrowAPY * utilization * (1 - fee)
+            rate_per_sec = borrow_rate_per_sec / Decimal(10**18)
+            fee_pct = fee_raw / Decimal(10**18)
+            supply_apy = (
+                ((1 + rate_per_sec) ** Decimal(str(SECONDS_PER_YEAR)) - 1)
+                * utilization
+                * (1 - fee_pct)
+                * 100
+            )
+
+            weighted_apy += supply_apy * total_supply_assets
+            total_supply += total_supply_assets
+            markets_read += 1
+
+        if total_supply == 0:
+            return None
+
+        avg_apy = weighted_apy / total_supply
+        tvl_usd = total_supply / Decimal(10**6)  # USDC = 6 decimals
+
+        logger.info(
+            f"On-chain | Morpho Blue | USDC supply APY: {avg_apy:.4f}% | "
+            f"TVL: ${tvl_usd:,.0f} | {markets_read} markets"
+        )
+
+        return YieldPool(
+            pool_id=f"morpho-v1-{chain.value}-usdc-onchain",
+            protocol=ProtocolName.MORPHO,
+            chain=chain,
+            symbol="USDC",
+            apy_base=avg_apy,
+            apy_reward=Decimal("0"),
+            apy_total=avg_apy,
+            tvl_usd=tvl_usd,
+            utilization=Decimal("0"),
+            source=DataSource.ONCHAIN,
+            timestamp=datetime.now(tz=timezone.utc),
+        )
+    except Exception as e:
+        logger.error(f"Failed to fetch Morpho on-chain rate: {e}")
+        return None
+
+
 async def fetch_all_onchain_rates(
     rpc_url: str,
     chain: Chain = Chain.BASE,
@@ -137,7 +246,7 @@ async def fetch_all_onchain_rates(
     w3 = await create_web3(rpc_url)
     results = []
 
-    for fetcher in [fetch_aave_rate, fetch_compound_rate]:
+    for fetcher in [fetch_aave_rate, fetch_compound_rate, fetch_morpho_rate]:
         pool = await fetcher(w3, chain)
         if pool:
             results.append(pool)
