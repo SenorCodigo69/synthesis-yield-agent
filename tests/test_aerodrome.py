@@ -10,7 +10,7 @@ from src.models import Chain
 SAMPLE_POOLS = [
     {
         "pool": "aero-usdc-weth-1",
-        "project": "aerodrome",
+        "project": "aerodrome-v1",
         "chain": "Base",
         "symbol": "USDC-WETH",
         "apy": 12.5,
@@ -20,7 +20,7 @@ SAMPLE_POOLS = [
     },
     {
         "pool": "aero-usdc-dai-2",
-        "project": "aerodrome",
+        "project": "aerodrome-v1",
         "chain": "Base",
         "symbol": "USDC-DAI",
         "apy": 6.1,
@@ -30,7 +30,7 @@ SAMPLE_POOLS = [
     },
     {
         "pool": "aero-tiny-pool",
-        "project": "aerodrome",
+        "project": "aerodrome-v1",
         "chain": "Base",
         "symbol": "TINY-PAIR",
         "apy": 50.0,
@@ -40,7 +40,7 @@ SAMPLE_POOLS = [
     },
     {
         "pool": "aero-eth-pool",
-        "project": "aerodrome",
+        "project": "aerodrome-v1",
         "chain": "Ethereum",  # Wrong chain
         "symbol": "WETH-USDC",
         "apy": 10.0,
@@ -74,7 +74,7 @@ class TestAerodromeMonitor:
     async def test_fetches_aerodrome_pools_only(self, mock_pools):
         """Should only return Aerodrome pools, not Aave etc."""
         pools = await fetch_aerodrome_pools(AsyncMock())
-        assert all(p["project"] == "aerodrome" for p in pools)
+        assert all(p["project"] in MONITORED_AMM_SLUGS for p in pools)
 
     @pytest.mark.asyncio
     async def test_filters_by_chain(self, mock_pools):
@@ -128,4 +128,5 @@ class TestAerodromeMonitor:
 class TestMonitoredSlugs:
     def test_aerodrome_in_monitored(self):
         """Aerodrome should be in the monitored AMM set."""
-        assert "aerodrome" in MONITORED_AMM_SLUGS
+        assert "aerodrome-v1" in MONITORED_AMM_SLUGS
+        assert "aerodrome-slipstream" in MONITORED_AMM_SLUGS

@@ -25,7 +25,8 @@ PROTOCOL_SLUGS = {
 
 # Monitored AMM protocols — read-only, not eligible for allocation
 # Aerodrome is Base-native (Velodrome fork), largest DEX on Base
-MONITORED_AMM_SLUGS = {"aerodrome"}
+# DeFi Llama slugs: aerodrome-v1 (classic AMM), aerodrome-slipstream (CL pools)
+MONITORED_AMM_SLUGS = {"aerodrome-v1", "aerodrome-slipstream"}
 
 # DeFi Llama uses title-case chain names
 CHAIN_NAMES = {
