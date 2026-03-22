@@ -1921,6 +1921,23 @@ async def _run(interval: int, capital: Decimal, mode: ExecutionMode):
         portfolio = Portfolio(capital, db)
         await portfolio.load_from_db()
 
+        # Reconcile DB with on-chain state in live mode
+        if mode == ExecutionMode.LIVE and live_kwargs.get("adapters"):
+            click.echo("Reconciling portfolio with on-chain balances...")
+            drift = await portfolio.reconcile_with_chain(
+                live_kwargs["adapters"], live_kwargs["sender"],
+            )
+            for proto, info in drift.items():
+                if info.get("error"):
+                    click.echo(f"  {proto}: could not verify ({info['error']})")
+                elif info["drift"] is not None and abs(info["drift"]) > 0.01:
+                    click.echo(
+                        f"  {proto}: CORRECTED — DB=${info['db']:.2f} → "
+                        f"on-chain=${info['onchain']:.2f} (drift=${info['drift']:+.2f})"
+                    )
+                else:
+                    click.echo(f"  {proto}: OK (${info.get('onchain', 0):.2f})")
+
         click.echo(
             f"Yield agent starting — ${capital:,.0f} capital, "
             f"{interval}s interval, {mode.value} mode"
@@ -1957,7 +1974,7 @@ async def _run(interval: int, capital: Decimal, mode: ExecutionMode):
                 exec_log.log_step("validate_depeg", "started")
                 async with aiohttp.ClientSession() as price_session:
                     usdc_price = await fetch_usdc_price(price_session)
-                exec_log.log_tool_call("coingecko", "usdc_price", detail=f"${usdc_price:.4f}")
+                exec_log.log_tool_call("base_rpc", "usdc_price", detail=f"${usdc_price:.4f}")
                 exec_log.log_step("validate_depeg", "ok", f"USDC=${usdc_price:.4f}")
 
                 # ── MONITOR: Circuit breaker check ────────────────────

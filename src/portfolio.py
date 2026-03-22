@@ -4,9 +4,12 @@ Paper mode: positions updated via simulated execution.
 Live mode: positions verified against on-chain balances.
 """
 
+from __future__ import annotations
+
 import logging
 from datetime import datetime, timezone
 from decimal import Decimal
+from typing import TYPE_CHECKING
 
 from src.database import Database
 from src.models import (
@@ -15,6 +18,9 @@ from src.models import (
     PortfolioSnapshot,
     ProtocolName,
 )
+
+if TYPE_CHECKING:
+    from src.protocols.base import ProtocolAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -125,6 +131,77 @@ class Portfolio:
     def get_position(self, protocol: str) -> Decimal:
         """Get current position size for a protocol."""
         return self.positions.get(protocol, Decimal("0"))
+
+    async def reconcile_with_chain(
+        self,
+        adapters: dict[str, ProtocolAdapter],
+        wallet: str,
+    ) -> dict[str, dict]:
+        """Compare DB positions against actual on-chain balances.
+
+        Reads each protocol's on-chain balance and corrects the DB if
+        drift exceeds $0.01. Returns a drift report per protocol.
+        """
+        drift_report: dict[str, dict] = {}
+        corrected = False
+
+        for proto_key, adapter in adapters.items():
+            db_amount = self.positions.get(proto_key, Decimal("0"))
+            try:
+                onchain_amount = await adapter.get_balance(wallet)
+            except Exception as e:
+                logger.warning(f"Reconcile: failed to read {proto_key} balance: {e}")
+                drift_report[proto_key] = {
+                    "db": float(db_amount),
+                    "onchain": None,
+                    "drift": None,
+                    "error": str(e),
+                }
+                continue
+
+            drift = onchain_amount - db_amount
+            drift_report[proto_key] = {
+                "db": float(db_amount),
+                "onchain": float(onchain_amount),
+                "drift": float(drift),
+            }
+
+            # Auto-correct if drift exceeds dust threshold
+            if abs(drift) > Decimal("0.01"):
+                logger.warning(
+                    f"Reconcile: {proto_key} drift ${drift:+.2f} "
+                    f"(DB=${db_amount:.2f}, on-chain=${onchain_amount:.2f}) — correcting"
+                )
+                if onchain_amount > Decimal("0"):
+                    self.positions[proto_key] = onchain_amount
+                else:
+                    self.positions.pop(proto_key, None)
+                corrected = True
+            else:
+                logger.info(
+                    f"Reconcile: {proto_key} OK "
+                    f"(DB=${db_amount:.2f}, on-chain=${onchain_amount:.2f})"
+                )
+
+        # Check for protocols in DB that have no adapter (orphaned positions)
+        for proto_key in list(self.positions.keys()):
+            if proto_key not in adapters:
+                logger.warning(
+                    f"Reconcile: {proto_key} in DB but no adapter — "
+                    f"cannot verify (${self.positions[proto_key]:.2f})"
+                )
+                drift_report[proto_key] = {
+                    "db": float(self.positions[proto_key]),
+                    "onchain": None,
+                    "drift": None,
+                    "error": "no adapter",
+                }
+
+        if corrected:
+            await self.save_snapshot()
+            logger.info("Reconcile: portfolio snapshot saved after corrections")
+
+        return drift_report
 
     def summary(self) -> dict:
         """Return portfolio summary as a dict."""
