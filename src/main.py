@@ -31,6 +31,7 @@ import click
 from src.circuit_breakers import CircuitBreakers
 from src.config import load_config, load_spending_scope
 from src.data.aggregator import fetch_validated_rates
+from src.data.defillama import fetch_aerodrome_pools
 from src.data.gas import fetch_gas_onchain
 from src.database import Database
 from src.depeg_monitor import fetch_usdc_price
@@ -53,7 +54,9 @@ from src.protocols.morpho_blue import MorphoBlueAdapter
 from src.protocols.tx_helpers import TransactionSigner
 from src.yield_learner import get_summary as get_learner_summary, record_yield_outcome
 from src.strategy.allocator import AllocationPlan, compute_allocations
-from src.strategy.rebalancer import check_rebalance_triggers, RebalanceTracker
+from src.strategy.rebalancer import (
+    check_rebalance_triggers, RebalanceSignal, RebalanceTracker, TriggerType,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -64,6 +67,63 @@ logger = logging.getLogger("yield-agent")
 
 
 CHAIN_MAP = {"base": Chain.BASE, "ethereum": Chain.ETHEREUM, "arbitrum": Chain.ARBITRUM}
+
+
+def _apply_rebalance_signals(
+    plan: AllocationPlan,
+    signals: list[RebalanceSignal],
+    rates: list,
+) -> AllocationPlan:
+    """Adjust allocation plan based on actionable rebalance signals.
+
+    Modifies the plan in-place so the executor's delta logic naturally
+    generates the right withdraw/supply actions.
+    """
+    if not signals or not plan.allocations:
+        return plan
+
+    rate_map = {r.protocol.value: r.apy_median for r in rates}
+
+    for sig in signals:
+        if not sig.should_act:
+            continue
+
+        if sig.trigger == TriggerType.RATE_DIFF and len(plan.allocations) >= 2:
+            # Shift capital from worst to best protocol
+            sorted_allocs = sorted(
+                plan.allocations,
+                key=lambda a: rate_map.get(a.protocol.value, Decimal("0")),
+                reverse=True,
+            )
+            best = sorted_allocs[0]
+            worst = sorted_allocs[-1]
+            move = worst.amount_usd * Decimal("0.5")
+            if move > Decimal("1"):
+                worst.amount_usd -= move
+                best.amount_usd += move
+                plan.total_allocated_usd = sum(
+                    a.amount_usd for a in plan.allocations
+                )
+                logger.info(
+                    f"Rebalance applied: shifting ${move:.2f} "
+                    f"from {worst.protocol.value} to {best.protocol.value}"
+                )
+
+        elif sig.trigger in (TriggerType.TVL_DROP, TriggerType.NEGATIVE_YIELD):
+            # Remove affected protocol from plan — executor will withdraw
+            # Parse protocol name from signal message (format: "proto_name TVL...")
+            for alloc in plan.allocations[:]:
+                if alloc.protocol.value in sig.message:
+                    logger.info(
+                        f"Rebalance applied: removing {alloc.protocol.value} "
+                        f"(${alloc.amount_usd:.2f}) — {sig.trigger.value}"
+                    )
+                    plan.allocations.remove(alloc)
+                    plan.total_allocated_usd = sum(
+                        a.amount_usd for a in plan.allocations
+                    )
+
+    return plan
 
 
 def _parse_chain(chain_name: str) -> Chain:
@@ -1967,6 +2027,18 @@ async def _run(interval: int, capital: Decimal, mode: ExecutionMode):
                 exec_log.log_tool_call("defillama", "fetch_rates", detail=f"{len(rates)} protocols")
                 exec_log.log_step("scan_rates", "ok", f"{len(rates)} rates fetched")
 
+                # ── MONITOR: Aerodrome AMM yields (read-only) ────────
+                try:
+                    async with aiohttp.ClientSession() as aero_session:
+                        aero_pools = await fetch_aerodrome_pools(aero_session)
+                    exec_log.log_tool_call(
+                        "defillama", "aerodrome_monitor",
+                        detail=f"{len(aero_pools)} pools",
+                    )
+                except Exception as e:
+                    logger.debug(f"Aerodrome monitor: {e}")
+                    aero_pools = []
+
                 gas = await _get_gas(rpc_url)
                 exec_log.log_tool_call("base_rpc", "fetch_gas", detail=f"{gas.total_gwei:.4f} gwei")
                 tracker.record_rates(rates)
@@ -2062,6 +2134,10 @@ async def _run(interval: int, capital: Decimal, mode: ExecutionMode):
                 for s in signals:
                     if s.should_act:
                         exec_log.log_decision("rebalance", "triggered", reasoning=s.message)
+
+                # Apply actionable rebalance signals to the allocation plan
+                # so the executor's delta logic generates the right actions
+                plan = _apply_rebalance_signals(plan, signals, rates)
 
                 # ── EXECUTE: Run plan ─────────────────────────────────
                 exec_log.log_step("execute", "started")

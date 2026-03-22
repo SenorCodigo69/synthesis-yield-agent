@@ -23,6 +23,10 @@ PROTOCOL_SLUGS = {
     ProtocolName.COMPOUND_V3: "compound-v3",
 }
 
+# Monitored AMM protocols — read-only, not eligible for allocation
+# Aerodrome is Base-native (Velodrome fork), largest DEX on Base
+MONITORED_AMM_SLUGS = {"aerodrome"}
+
 # DeFi Llama uses title-case chain names
 CHAIN_NAMES = {
     Chain.BASE: "Base",
@@ -98,6 +102,58 @@ async def fetch_usdc_pools(
         f"DeFi Llama: found {len(results)} USDC pools on {target_chain} "
         f"across {len(target_slugs)} protocols"
     )
+    return results
+
+
+async def fetch_aerodrome_pools(
+    session: aiohttp.ClientSession,
+    chain: Chain = Chain.BASE,
+    min_tvl: int = 100_000,
+    max_pools: int = 5,
+) -> list[dict]:
+    """Fetch top Aerodrome LP pools for monitoring (read-only).
+
+    Returns simplified pool data — not YieldPool objects since these are
+    AMM pools, not lending. Used for Base ecosystem awareness, not allocation.
+    """
+    all_pools = await fetch_all_pools(session)
+
+    target_chain = CHAIN_NAMES[chain]
+    results = []
+
+    for pool in all_pools:
+        if pool.get("project") not in MONITORED_AMM_SLUGS:
+            continue
+        if pool.get("chain") != target_chain:
+            continue
+        tvl = pool.get("tvlUsd") or 0
+        if tvl < min_tvl:
+            continue
+
+        apy = pool.get("apy") or 0
+        symbol = pool.get("symbol", "?")
+        results.append({
+            "pool_id": pool.get("pool", ""),
+            "symbol": symbol,
+            "apy_total": round(apy, 2),
+            "apy_base": round(pool.get("apyBase") or 0, 2),
+            "apy_reward": round(pool.get("apyReward") or 0, 2),
+            "tvl_usd": round(tvl),
+            "project": pool.get("project", ""),
+        })
+
+    # Sort by TVL descending, take top N
+    results.sort(key=lambda p: p["tvl_usd"], reverse=True)
+    results = results[:max_pools]
+
+    for p in results:
+        logger.info(
+            f"Aerodrome | {p['symbol']} | "
+            f"APY: {p['apy_total']:.2f}% (base: {p['apy_base']:.2f}% + rewards: {p['apy_reward']:.2f}%) | "
+            f"TVL: ${p['tvl_usd']:,.0f}"
+        )
+
+    logger.info(f"Aerodrome: {len(results)} monitored pools on {target_chain} (read-only)")
     return results
 
 
