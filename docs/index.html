@@ -322,9 +322,9 @@
         <a href="https://github.com/SenorCodigo69/synthesis-yield-agent" target="_blank" style="background:var(--surface);color:var(--text);padding:10px 24px;border-radius:6px;font-size:0.85rem;font-weight:600;border:1px solid var(--border);text-decoration:none;">GitHub</a>
       </div>
       <p style="color: var(--muted); font-size: 0.85rem; max-width: 600px; margin: 0 auto;">
-        Two AI agents, one pipeline. The Yield Agent decides <em>what</em> to do.
-        The ZK Agent proves it's <em>authorized</em> to do it. The agent tracks every decision,
-        compares predicted vs actual yield, and adjusts its own risk weights. No human in the loop.
+        Three AI agents, one pipeline. The Yield Agent decides <em>what</em> to do.
+        The ZK Agent proves it's <em>authorized</em> to do it. The stETH Treasury <em>funds</em> the operation.
+        The agent tracks every decision, compares predicted vs actual yield, and adjusts its own risk weights. No human in the loop.
       </p>
     </div>
 
@@ -377,7 +377,7 @@
           <span class="step-num">01</span>
           <div>
             <div class="step-title">OBSERVE</div>
-            <div class="step-desc">Scan DeFi yield rates (Aave, Morpho, Compound) + wallet balances + Uniswap LP pools via DeFi Llama + on-chain validation</div>
+            <div class="step-desc">Scan DeFi yield rates (Aave, Morpho, Compound) + Aerodrome AMM pools + wallet balances — all on-chain reads, cross-validated with DeFi Llama</div>
           </div>
         </div>
         <div class="step">
@@ -438,11 +438,11 @@
           <div class="stat-label">Chains (Base + Ethereum)</div>
         </div>
         <div class="stat">
-          <div class="stat-value">594</div>
+          <div class="stat-value">643</div>
           <div class="stat-label">Tests Passing</div>
         </div>
         <div class="stat">
-          <div class="stat-value">14</div>
+          <div class="stat-value">16</div>
           <div class="stat-label">Security Audits</div>
         </div>
         <div class="stat">
@@ -532,7 +532,7 @@
         <div class="guardrail">ZK proofs required before swap execution</div>
         <div class="guardrail">Spending scope enforced (max single + period limits)</div>
         <div class="guardrail">Gas price ceiling (5 gwei cap on Base)</div>
-        <div class="guardrail">Rate cross-validation across 3 data sources</div>
+        <div class="guardrail">Rate cross-validation: on-chain reads + DeFi Llama</div>
         <div class="guardrail">Paper mode default — live requires explicit flag</div>
       </div>
     </section>
@@ -574,11 +574,11 @@
         </a>
         <a href="https://github.com/SenorCodigo69/synthesis-yield-agent" class="link-card">
           <h3>Yield Agent</h3>
-          <p>AI yield optimizer — Aave, Morpho, Uniswap LP, concentrated LP, swap reasoning, self-improving learner. 391 tests, 8 security audits.</p>
+          <p>AI yield optimizer — Aave, Morpho, Uniswap LP, concentrated LP, swap reasoning, self-improving learner. 423 tests, 15 security audits.</p>
         </a>
         <a href="https://github.com/SenorCodigo69/synthesis-zk-agent" class="link-card">
           <h3>ZK Agent</h3>
-          <p>Zero-knowledge privacy layer — Groth16 proofs, V4 hooks (ZKGated + DynamicFee), selective disclosure. 193 tests, 4 audits.</p>
+          <p>Zero-knowledge privacy layer — Groth16 proofs, V4 hooks (ZKGated + DynamicFee), selective disclosure. 193 tests, 6 audits.</p>
         </a>
         <a href="https://basescan.org/address/0x45eC09fB08B83f104F15f3709F4677736112c080" class="link-card">
           <h3>ZKGatedHook on BaseScan</h3>
@@ -619,7 +619,7 @@
     <!-- Footer -->
     <footer>
       <p class="hackathon">EF Synthesis Hackathon 2026</p>
-      <p>Built with Claude Code (claude-opus-4-6) across 50 sessions</p>
+      <p>Built with Claude Code (claude-opus-4-6) across 53 sessions</p>
       <p style="margin-top: 8px;">Tracks: "Agents that pay" + "Agents that keep secrets" + Uniswap "Agentic Finance" + "Let the Agent Cook" + Lido "stETH Agent Treasury"</p>
     </footer>
 
