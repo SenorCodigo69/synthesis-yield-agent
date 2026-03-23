@@ -56,9 +56,15 @@
       "description": "DeFi Llama yields API — cross-protocol yield rates and TVL data"
     },
     {
-      "name": "coingecko_api",
-      "type": "data_api",
-      "description": "ETH/USD price data for swap valuation"
+      "name": "chainlink_oracle",
+      "type": "on_chain_oracle",
+      "description": "Chainlink ETH/USD price feed on Base — on-chain price data, no external API"
+    },
+    {
+      "name": "aerodrome_monitor",
+      "type": "defi_protocol",
+      "description": "Aerodrome AMM pool monitoring on Base — read-only yield tracking via DeFi Llama",
+      "capabilities": ["rate_query"]
     },
     {
       "name": "base_rpc",
