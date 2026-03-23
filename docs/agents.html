@@ -1,295 +1,650 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="dark">
+<html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Agent Fleet — Synthesis</title>
-<style>
-  @font-face { font-family: 'Redaction35'; src: url('fonts/Redaction35-BWXjw.otf') format('opentype'); font-weight: normal; }
-  @font-face { font-family: 'Redaction35'; src: url('fonts/Redaction35Bold-MV3LP.otf') format('opentype'); font-weight: bold; }
-  @font-face { font-family: 'Redaction35'; src: url('fonts/Redaction35Italic-rgDrB.otf') format('opentype'); font-style: italic; }
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Agent Fleet — Synthesis Hackathon 2026</title>
+  <style>
+    :root {
+      --bg: #0a0a0f;
+      --surface: #12121a;
+      --border: #1e1e2e;
+      --text: #e0e0e8;
+      --muted: #8888a0;
+      --accent: #6c5ce7;
+      --accent2: #00cec9;
+      --green: #00b894;
+      --orange: #fdcb6e;
+      --red: #d63031;
+      --blue: #0984e3;
+    }
 
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  :root { --bg: #fff; --fg: #000; --bg-alt: #f5f5f5; --border: #000; --dot: 1px dotted #000; --green: #118844; --red: #cc2244; --warn: #cc8800; --blue: #2255cc; --accent: #2255cc; }
-  [data-theme="dark"] { --bg: #1a1a1e; --fg: #c8c8c8; --bg-alt: #222226; --border: #555; --dot: 1px dotted #555; --green: #44cc88; --red: #ff5577; --warn: #ffcc44; --blue: #6699ff; --accent: #6699ff; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
 
-  body { background: var(--bg); color: var(--fg); font-family: 'Redaction35', 'Georgia', serif; font-size: 13px; transition: background 0.15s, color 0.15s; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
 
-  .menubar { background: var(--bg); border-bottom: 2px solid var(--border); padding: 4px 12px; display: flex; align-items: center; position: sticky; top: 0; z-index: 100; }
-  .menubar-logo { font-size: 16px; font-weight: bold; margin-right: 16px; letter-spacing: -0.5px; font-style: italic; }
-  .menubar-item { padding: 2px 12px; font-size: 13px; font-weight: bold; cursor: default; text-decoration: none; color: var(--fg); border: 1px solid transparent; }
-  .menubar-item:hover { background: var(--fg); color: var(--bg); }
-  .menubar-item.active { background: var(--fg); color: var(--bg); }
-  .toggle-theme { cursor: pointer; border: 1px solid var(--border) !important; margin-left: auto; font-size: 12px; padding: 2px 10px; }
+    .container { max-width: 960px; margin: 0 auto; padding: 0 24px; }
 
-  .desktop { padding: 12px 16px; max-width: 900px; margin: 0 auto; display: flex; flex-direction: column; gap: 12px; padding-bottom: 48px; }
+    /* Nav */
+    nav {
+      display: flex;
+      justify-content: center;
+      gap: 24px;
+      padding: 12px 0;
+      font-size: 0.8rem;
+      border-bottom: 1px solid var(--border);
+    }
 
-  .win { border: 2px solid var(--border); background: var(--bg); }
-  .win-title { background: var(--bg); border-bottom: 2px solid var(--border); padding: 3px 8px; display: flex; align-items: center; gap: 8px; cursor: default; user-select: none; }
-  .win-close { width: 14px; height: 14px; border: 2px solid var(--border); display: inline-block; flex-shrink: 0; }
-  .win-title-text { flex: 1; text-align: center; font-size: 13px; font-weight: bold; letter-spacing: 0.5px; text-transform: uppercase; }
-  .win-stripes { flex: 0 0 40px; height: 14px; background: repeating-linear-gradient(0deg, var(--border) 0px, var(--border) 2px, var(--bg) 2px, var(--bg) 4px); }
-  .win-body { padding: 12px; }
+    nav a { color: var(--muted); text-decoration: none; }
+    nav a:hover { color: var(--text); }
+    nav a.active { color: var(--accent2); font-weight: 700; }
 
-  .hero { padding: 40px 0 24px; text-align: center; }
-  .hero h1 { font-size: 24px; font-style: italic; letter-spacing: 1px; margin-bottom: 6px; }
-  .hero h1 span { color: var(--accent); }
-  .hero .tagline { font-size: 13px; opacity: 0.55; }
+    /* Hero */
+    .hero {
+      padding: 60px 0 40px;
+      text-align: center;
+    }
 
-  /* Summary row */
-  .summary { display: grid; grid-template-columns: repeat(6, 1fr); gap: 0; border: 2px solid var(--border); margin-bottom: 12px; }
-  .summary-stat { text-align: center; padding: 10px 6px; border-right: 1px solid var(--border); }
-  .summary-stat:last-child { border-right: none; }
-  .summary-stat .val { font-size: 18px; font-weight: bold; color: var(--green); }
-  .summary-stat .lbl { font-size: 9px; text-transform: uppercase; letter-spacing: 1px; opacity: 0.5; margin-top: 2px; }
+    .hero h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      margin-bottom: 8px;
+    }
 
-  .stat { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: var(--dot); font-size: 12px; }
-  .stat:last-child { border-bottom: none; }
-  .stat-label { opacity: 0.6; }
-  .stat-value { font-weight: bold; }
+    .hero h1 span { color: var(--accent); }
 
-  .contracts-title { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; opacity: 0.5; margin: 10px 0 6px; padding-top: 8px; border-top: var(--dot); }
-  .contract-row { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: var(--dot); font-size: 12px; }
-  .contract-row:last-child { border-bottom: none; }
-  .contract-addr { color: var(--accent); font-size: 11px; text-decoration: none; }
-  .contract-addr:hover { text-decoration: underline; }
+    .hero .tagline {
+      color: var(--muted);
+      font-size: 0.95rem;
+      margin-bottom: 24px;
+    }
 
-  .tags { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 10px; }
-  .tag { font-size: 10px; padding: 1px 6px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; border: 1px solid var(--border); }
-  .tag-chain { border-color: var(--green); color: var(--green); }
+    /* Summary Stats */
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 12px;
+      padding: 24px 0;
+      border-bottom: 1px solid var(--border);
+    }
 
-  .agent-links { display: flex; gap: 12px; margin-top: 10px; padding-top: 8px; border-top: var(--dot); font-size: 12px; }
+    .summary-stat {
+      text-align: center;
+      padding: 12px;
+    }
 
-  .badge { font-size: 10px; padding: 2px 8px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; border: 2px solid; }
-  .badge-live { border-color: var(--green); color: var(--green); }
-  .badge-deployed { border-color: var(--accent); color: var(--accent); }
+    .summary-stat .val {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--accent2);
+    }
 
-  .safety-box { padding: 8px 12px; border: 2px solid var(--green); margin-top: 10px; font-size: 11px; line-height: 1.8; opacity: 0.75; }
+    .summary-stat .lbl {
+      font-size: 0.65rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-top: 4px;
+    }
 
-  .zk-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-  .zk-col { border: 2px solid var(--border); padding: 12px; }
-  .zk-col-title { font-weight: bold; font-size: 12px; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 1px; }
-  .zk-col ul { list-style: none; font-size: 12px; line-height: 1.8; }
-  .zk-col ul li::before { content: "\2022 "; opacity: 0.4; }
+    /* Agent Cards */
+    .agents { padding: 32px 0; display: grid; gap: 24px; }
 
-  .pipeline-flow { border: 2px solid var(--border); padding: 16px; text-align: center; font-size: 12px; line-height: 2.4; }
-  .flow { color: var(--accent); font-weight: bold; }
-  .flow-green { color: var(--green); font-weight: bold; }
-  .flow-warn { color: var(--warn); font-weight: bold; }
-  .arrow { opacity: 0.4; margin: 0 4px; }
+    .agent-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow: hidden;
+    }
 
-  a { color: var(--accent); text-decoration: none; }
-  a:hover { text-decoration: underline; }
+    .agent-header {
+      padding: 20px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      border-bottom: 1px solid var(--border);
+    }
 
-  .statusbar { border-top: 2px solid var(--border); padding: 3px 12px; display: flex; gap: 2px; font-size: 11px; background: var(--bg); position: fixed; bottom: 0; left: 0; right: 0; z-index: 100; }
-  .statusbar-cell { padding: 1px 10px; border-right: 1px solid var(--border); }
-  .statusbar-cell:last-child { border-right: none; }
-</style>
+    .agent-name {
+      font-size: 1.1rem;
+      font-weight: 700;
+    }
+
+    .agent-desc {
+      color: var(--muted);
+      font-size: 0.8rem;
+      margin-top: 4px;
+      max-width: 500px;
+    }
+
+    .status-badge {
+      font-size: 0.7rem;
+      padding: 4px 10px;
+      border-radius: 3px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      white-space: nowrap;
+    }
+
+    .status-live {
+      background: rgba(0,184,148,0.15);
+      color: var(--green);
+      border: 1px solid rgba(0,184,148,0.3);
+    }
+
+    .status-deployed {
+      background: rgba(108,92,231,0.15);
+      color: var(--accent);
+      border: 1px solid rgba(108,92,231,0.3);
+    }
+
+    .agent-body { padding: 20px 24px; }
+
+    .agent-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 16px;
+    }
+
+    .agent-field .label {
+      font-size: 0.65rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .agent-field .value {
+      font-size: 0.9rem;
+      font-weight: 600;
+      margin-top: 2px;
+    }
+
+    /* Contracts */
+    .contracts {
+      margin-top: 16px;
+      border-top: 1px solid var(--border);
+      padding-top: 16px;
+    }
+
+    .contracts-title {
+      font-size: 0.7rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 10px;
+    }
+
+    .contract-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 0;
+      border-bottom: 1px solid rgba(30,30,46,0.5);
+      font-size: 0.8rem;
+    }
+
+    .contract-row:last-child { border-bottom: none; }
+
+    .contract-name { color: var(--text); }
+    .contract-addr {
+      color: var(--accent2);
+      font-size: 0.75rem;
+      text-decoration: none;
+    }
+    .contract-addr:hover { text-decoration: underline; }
+
+    /* Tech tags */
+    .tags {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-top: 12px;
+    }
+
+    .tag {
+      font-size: 0.65rem;
+      padding: 2px 8px;
+      border-radius: 3px;
+      background: rgba(108,92,231,0.1);
+      color: var(--accent);
+      border: 1px solid rgba(108,92,231,0.2);
+    }
+
+    .tag.chain {
+      background: rgba(0,206,201,0.1);
+      color: var(--accent2);
+      border-color: rgba(0,206,201,0.2);
+    }
+
+    /* Links row */
+    .agent-links {
+      display: flex;
+      gap: 16px;
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+      font-size: 0.8rem;
+    }
+
+    .agent-links a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    .agent-links a:hover { text-decoration: underline; }
+
+    /* Bounties section */
+    section {
+      padding: 32px 0;
+      border-top: 1px solid var(--border);
+    }
+
+    section h2 {
+      font-size: 1.1rem;
+      margin-bottom: 20px;
+      color: var(--accent2);
+    }
+
+    .bounty-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 12px;
+    }
+
+    .bounty {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 16px;
+    }
+
+    .bounty-name {
+      font-weight: 600;
+      font-size: 0.9rem;
+      margin-bottom: 4px;
+    }
+
+    .bounty-prize {
+      color: var(--green);
+      font-size: 0.8rem;
+      font-weight: 600;
+    }
+
+    .bounty-status {
+      color: var(--muted);
+      font-size: 0.75rem;
+      margin-top: 6px;
+    }
+
+    /* Links */
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* Footer */
+    footer {
+      padding: 32px 0;
+      border-top: 1px solid var(--border);
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.8rem;
+    }
+
+    footer .hackathon {
+      font-size: 0.9rem;
+      color: var(--text);
+      margin-bottom: 8px;
+    }
+  </style>
 </head>
 <body>
+  <div class="container">
 
-<div class="menubar">
-  <span class="menubar-logo">Synthesis</span>
-  <a href="index.html" class="menubar-item">Home</a>
-  <a href="dashboard.html" class="menubar-item">Dashboard</a>
-  <a href="agents.html" class="menubar-item active">Agent Fleet</a>
-  <a href="https://github.com/SenorCodigo69/synthesis-yield-agent" target="_blank" class="menubar-item">GitHub</a>
-  <span class="menubar-item toggle-theme" onclick="toggleTheme()">Light/Dark</span>
-</div>
+    <nav>
+      <a href="index.html">Home</a>
+      <a href="dashboard.html">Dashboard</a>
+      <a href="agents.html" class="active">Agent Fleet</a>
+      <a href="https://github.com/SenorCodigo69/synthesis-yield-agent" target="_blank">GitHub</a>
+    </nav>
 
-<div class="desktop">
+    <div class="hero">
+      <h1>Agent <span>Fleet</span></h1>
+      <p class="tagline">Three autonomous agents, two chains, one pipeline</p>
+    </div>
 
-  <div class="hero">
-    <h1>Agent <span>Fleet</span></h1>
-    <p class="tagline">Three autonomous agents, two chains, one pipeline</p>
-  </div>
-
-  <!-- Summary -->
-  <div class="summary">
-    <div class="summary-stat"><div class="val">3</div><div class="lbl">Agents</div></div>
-    <div class="summary-stat"><div class="val">423</div><div class="lbl">Tests</div></div>
-    <div class="summary-stat"><div class="val">15</div><div class="lbl">Audits</div></div>
-    <div class="summary-stat"><div class="val">7</div><div class="lbl">Contracts</div></div>
-    <div class="summary-stat"><div class="val">2</div><div class="lbl">ERC-8004</div></div>
-    <div class="summary-stat"><div class="val" style="font-size:13px;">Base+ETH</div><div class="lbl">Chains</div></div>
-  </div>
-
-  <!-- Yield Agent -->
-  <div class="win">
-    <div class="win-title"><span class="win-close"></span><span class="win-title-text">Yield Agent</span><span class="win-stripes"></span></div>
-    <div class="win-body">
-      <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:10px;">
-        <p style="font-size:12px;opacity:0.65;max-width:500px;">Autonomous DeFi yield optimizer. Scans lending protocols, computes risk-adjusted yield, allocates capital, executes swaps and deposits — all on-chain.</p>
-        <span class="badge badge-live">Live</span>
+    <!-- Summary -->
+    <div class="summary">
+      <div class="summary-stat">
+        <div class="val">3</div>
+        <div class="lbl">Agents</div>
       </div>
-      <div class="stat"><span class="stat-label">Chain</span><span class="stat-value">Base Mainnet</span></div>
-      <div class="stat"><span class="stat-label">Tests</span><span class="stat-value">423 passing</span></div>
-      <div class="stat"><span class="stat-label">Security Audits</span><span class="stat-value">15 completed</span></div>
-      <div class="stat"><span class="stat-label">Protocols</span><span class="stat-value">Aave V3, Morpho Blue, Compound V3</span></div>
-      <div class="stat"><span class="stat-label">AI Brain</span><span class="stat-value">Claude Haiku</span></div>
-      <div class="stat"><span class="stat-label">ERC-8004</span><span class="stat-value"><a href="https://basescan.org/address/0x8d691720bF8C81044DB1a77b82D0eF5f5bffdE6C" target="_blank">#32272</a></span></div>
-      <div class="contracts-title">On-Chain Activity</div>
-      <div class="contract-row"><span>Wallet</span><a class="contract-addr" href="https://basescan.org/address/0x8d691720bF8C81044DB1a77b82D0eF5f5bffdE6C" target="_blank">0x8d69...dE6C</a></div>
-      <div class="contract-row"><span>Aave V3 Deposit (14 USDC)</span><a class="contract-addr" href="https://basescan.org/tx/0xdd2dcabb1a1ed41aef3308c4c3f7fd01674f2827be9de34c76b8b9d1c8f45f0a" target="_blank">0xdd2d...5f0a</a></div>
-      <div class="contract-row"><span>Uniswap Swap (USDC &rarr; WETH)</span><a class="contract-addr" href="https://basescan.org/tx/0xd368dae52f6a6c9a8ff4e9b40a9c7c6f7c6e2b1e8c3e3a8b2b0f4e6d1c3a5b7" target="_blank">0xd368...a5b7</a></div>
-      <div class="contract-row"><span>LP Position (WETH-USDC)</span><a class="contract-addr" href="https://basescan.org/tx/0x83c7071962e5a2267ad95fa0afad585720f221516bf56e00abde81c45341793a" target="_blank">#4816034</a></div>
-      <div class="tags">
-        <span class="tag tag-chain">Base</span>
-        <span class="tag">Uniswap V3 LP</span>
-        <span class="tag">Aave V3</span>
-        <span class="tag">Morpho Blue</span>
-        <span class="tag">AI Swap</span>
-        <span class="tag">Risk Scoring</span>
-        <span class="tag">Circuit Breakers</span>
+      <div class="summary-stat">
+        <div class="val">380</div>
+        <div class="lbl">Tests Passing</div>
       </div>
-      <div class="agent-links">
-        <a href="https://github.com/SenorCodigo69/synthesis-yield-agent" target="_blank">GitHub</a>
-        <a href="dashboard.html">Live Dashboard</a>
-        <a href="index.html">Landing Page</a>
+      <div class="summary-stat">
+        <div class="val">14</div>
+        <div class="lbl">Security Audits</div>
+      </div>
+      <div class="summary-stat">
+        <div class="val">6</div>
+        <div class="lbl">Contracts Deployed</div>
+      </div>
+      <div class="summary-stat">
+        <div class="val">2</div>
+        <div class="lbl">ERC-8004 IDs</div>
+      </div>
+      <div class="summary-stat">
+        <div class="val">Base + ETH</div>
+        <div class="lbl">Chains</div>
       </div>
     </div>
-  </div>
 
-  <!-- ZK Agent -->
-  <div class="win">
-    <div class="win-title"><span class="win-close"></span><span class="win-title-text">ZK Privacy Agent</span><span class="win-stripes"></span></div>
-    <div class="win-body">
-      <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:10px;">
-        <p style="font-size:12px;opacity:0.65;max-width:500px;">Privacy-preserving execution layer. Generates Groth16 ZK proofs for authorization, budget, and spend — gates Uniswap V4 swaps without revealing private data.</p>
-        <span class="badge badge-deployed">Deployed</span>
-      </div>
-      <div class="stat"><span class="stat-label">Chain</span><span class="stat-value">Base Mainnet</span></div>
-      <div class="stat"><span class="stat-label">Tests</span><span class="stat-value">193 (89 Py + 50 Sol + 54 Circom)</span></div>
-      <div class="stat"><span class="stat-label">Security Audits</span><span class="stat-value">4 completed (54 findings)</span></div>
-      <div class="stat"><span class="stat-label">ZK Circuits</span><span class="stat-value">3 Circom (Groth16)</span></div>
-      <div class="stat"><span class="stat-label">V4 Hook</span><span class="stat-value">ZKGatedHook (beforeSwap)</span></div>
-      <div class="stat"><span class="stat-label">ERC-8004</span><span class="stat-value"><a href="https://basescan.org/address/0x8d691720bF8C81044DB1a77b82D0eF5f5bffdE6C" target="_blank">#32271</a></span></div>
-      <div class="contracts-title">Deployed Contracts (Base)</div>
-      <div class="contract-row"><span>ZKGatedHook v2</span><a class="contract-addr" href="https://basescan.org/address/0x45eC09fB08B83f104F15f3709F4677736112c080" target="_blank">0x45eC...c080</a></div>
-      <div class="contract-row"><span>AuthorizationVerifier</span><a class="contract-addr" href="https://basescan.org/address/0x2a8FBE80BDc9cb907b20acBE84F13a858CBEdAe4" target="_blank">0x2a8F...dAe4</a></div>
-      <div class="contract-row"><span>BudgetRangeVerifier</span><a class="contract-addr" href="https://basescan.org/address/0x8d7520a34f3EFbB86d02232C4fc31dB9415142d3" target="_blank">0x8d75...42d3</a></div>
-      <div class="contract-row"><span>CumulativeSpendVerifier</span><a class="contract-addr" href="https://basescan.org/address/0x1c7A42fea03ec0C86c94B886588a2680184428D9" target="_blank">0x1c7A...28D9</a></div>
-      <div class="contract-row"><span>PolicyCommitment</span><a class="contract-addr" href="https://basescan.org/address/0x049B09c4aE1974F84164b65a9f0AB412dA9814f2" target="_blank">0x049B...14f2</a></div>
-      <div class="tags">
-        <span class="tag tag-chain">Base</span>
-        <span class="tag">Groth16</span>
-        <span class="tag">Circom</span>
-        <span class="tag">Uniswap V4 Hook</span>
-        <span class="tag">EdDSA</span>
-        <span class="tag">Selective Disclosure</span>
-        <span class="tag">ERC-8004</span>
-      </div>
-      <div class="agent-links">
-        <a href="https://github.com/SenorCodigo69/synthesis-zk-agent" target="_blank">GitHub</a>
-        <a href="https://basescan.org/address/0x45eC09fB08B83f104F15f3709F4677736112c080" target="_blank">V4 Hook on BaseScan</a>
-      </div>
-    </div>
-  </div>
+    <!-- Agent Cards -->
+    <div class="agents">
 
-  <!-- stETH Treasury -->
-  <div class="win">
-    <div class="win-title"><span class="win-close"></span><span class="win-title-text">stETH Treasury Agent</span><span class="win-stripes"></span></div>
-    <div class="win-body">
-      <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:10px;">
-        <p style="font-size:12px;opacity:0.65;max-width:500px;">Yield-bearing operating budget backed by Lido staked ETH. Agent can only withdraw accrued staking yield — principal is structurally inaccessible at the contract level.</p>
-        <span class="badge badge-live">Live</span>
-      </div>
-      <div class="stat"><span class="stat-label">Chain</span><span class="stat-value">Ethereum Mainnet</span></div>
-      <div class="stat"><span class="stat-label">Tests</span><span class="stat-value">27 passing (Foundry)</span></div>
-      <div class="stat"><span class="stat-label">Principal</span><span class="stat-value">0.0065 stETH</span></div>
-      <div class="stat"><span class="stat-label">Yield Rate</span><span class="stat-value">~3.5% APR (Lido)</span></div>
-      <div class="stat"><span class="stat-label">Per-Tx Cap</span><span class="stat-value">0.1 stETH</span></div>
-      <div class="stat"><span class="stat-label">Cooldown</span><span class="stat-value">1 hour</span></div>
-      <div class="contracts-title">Deployed Contract (Ethereum)</div>
-      <div class="contract-row"><span>AgentTreasury</span><a class="contract-addr" href="https://etherscan.io/address/0x049B09c4aE1974F84164b65a9f0AB412dA9814f2" target="_blank">0x049B...14f2</a></div>
-      <div class="contract-row"><span>Deposit (0.008 ETH &rarr; Lido)</span><a class="contract-addr" href="https://etherscan.io/tx/0xbea50de54a3ee044cbf187189e83cc08c0829dcf3dbd4fa6fd2aaa3c7b9578c7" target="_blank">0xbea5...78c7</a></div>
-      <div class="contract-row"><span>Wallet</span><a class="contract-addr" href="https://etherscan.io/address/0x8d691720bF8C81044DB1a77b82D0eF5f5bffdE6C" target="_blank">0x8d69...dE6C</a></div>
-      <div class="safety-box">
-        <strong style="color:var(--green);">Safety:</strong>
-        Principal protected by on-chain invariant &bull;
-        Recipient whitelist enforced &bull;
-        Per-tx cap + cooldown &bull;
-        Owner can exit at any time &bull;
-        Verified on Sourcify + Blockscout
-      </div>
-      <div class="tags">
-        <span class="tag tag-chain">Ethereum</span>
-        <span class="tag">Lido stETH</span>
-        <span class="tag">wstETH</span>
-        <span class="tag">Yield-Bearing Budget</span>
-        <span class="tag">Principal Protection</span>
-        <span class="tag">Foundry</span>
-      </div>
-      <div class="agent-links">
-        <a href="https://github.com/SenorCodigo69/synthesis-steth-treasury" target="_blank">GitHub</a>
-        <a href="https://etherscan.io/address/0x049B09c4aE1974F84164b65a9f0AB412dA9814f2" target="_blank">Etherscan</a>
-        <a href="https://eth.blockscout.com/address/0x049B09c4aE1974F84164b65a9f0AB412dA9814f2" target="_blank">Blockscout</a>
-      </div>
-    </div>
-  </div>
-
-  <!-- ZK Transparency -->
-  <div class="win">
-    <div class="win-title"><span class="win-close"></span><span class="win-title-text">ZK Transparency</span><span class="win-stripes"></span></div>
-    <div class="win-body">
-      <div class="zk-grid">
-        <div class="zk-col" style="border-color:var(--accent);">
-          <div class="zk-col-title" style="color:var(--accent);">Hidden (ZK-proven)</div>
-          <ul>
-            <li>Owner identity (who delegated the agent)</li>
-            <li>Spending limits and budget ranges</li>
-            <li>Cumulative spend caps and history</li>
-            <li>Policy parameters and constraints</li>
-            <li>Delegation chain details</li>
-          </ul>
+      <!-- Yield Agent -->
+      <div class="agent-card">
+        <div class="agent-header">
+          <div>
+            <div class="agent-name">Yield Agent</div>
+            <div class="agent-desc">Autonomous DeFi yield optimizer. Scans lending protocols, computes risk-adjusted yield, allocates capital, executes swaps and deposits — all on-chain.</div>
+          </div>
+          <span class="status-badge status-live">Live</span>
         </div>
-        <div class="zk-col" style="border-color:var(--warn);">
-          <div class="zk-col-title" style="color:var(--warn);">Public (on-chain)</div>
-          <ul>
-            <li>Agent wallet address</li>
-            <li>Transaction amounts and destinations</li>
-            <li>Deposits, swaps, LP positions</li>
-            <li>Token balances</li>
-            <li>All tx history on BaseScan</li>
-          </ul>
+        <div class="agent-body">
+          <div class="agent-grid">
+            <div class="agent-field">
+              <div class="label">Chain</div>
+              <div class="value">Base Mainnet</div>
+            </div>
+            <div class="agent-field">
+              <div class="label">Tests</div>
+              <div class="value">214 passing</div>
+            </div>
+            <div class="agent-field">
+              <div class="label">Security Audits</div>
+              <div class="value">8 completed</div>
+            </div>
+            <div class="agent-field">
+              <div class="label">Protocols</div>
+              <div class="value">Aave V3, Morpho, Compound</div>
+            </div>
+            <div class="agent-field">
+              <div class="label">AI Brain</div>
+              <div class="value">Claude Haiku</div>
+            </div>
+            <div class="agent-field">
+              <div class="label">ERC-8004</div>
+              <div class="value"><a href="https://basescan.org/address/0x8d691720bF8C81044DB1a77b82D0eF5f5bffdE6C" target="_blank">#32272</a></div>
+            </div>
+          </div>
+          <div class="contracts">
+            <div class="contracts-title">On-Chain Activity</div>
+            <div class="contract-row">
+              <span class="contract-name">Wallet</span>
+              <a class="contract-addr" href="https://basescan.org/address/0x8d691720bF8C81044DB1a77b82D0eF5f5bffdE6C" target="_blank">0x8d69...dE6C</a>
+            </div>
+            <div class="contract-row">
+              <span class="contract-name">Aave V3 Deposit (14 USDC)</span>
+              <a class="contract-addr" href="https://basescan.org/tx/0xdd2dcabb1a1ed41aef3308c4c3f7fd01674f2827be9de34c76b8b9d1c8f45f0a" target="_blank">0xdd2d...5f0a</a>
+            </div>
+            <div class="contract-row">
+              <span class="contract-name">Uniswap Swap (USDC &rarr; WETH)</span>
+              <a class="contract-addr" href="https://basescan.org/tx/0xd368dae52f6a6c9a8ff4e9b40a9c7c6f7c6e2b1e8c3e3a8b2b0f4e6d1c3a5b7" target="_blank">0xd368...a5b7</a>
+            </div>
+            <div class="contract-row">
+              <span class="contract-name">Uniswap Swap (ETH &rarr; USDC)</span>
+              <a class="contract-addr" href="https://basescan.org/tx/0x15192308" target="_blank">0x1519...2308</a>
+            </div>
+            <div class="contract-row">
+              <span class="contract-name">LP Position (WETH-USDC)</span>
+              <a class="contract-addr" href="https://basescan.org/tx/0x83c7071962e5a2267ad95fa0afad585720f221516bf56e00abde81c45341793a" target="_blank">#4816034</a>
+            </div>
+          </div>
+          <div class="tags">
+            <span class="tag chain">Base</span>
+            <span class="tag">Uniswap V3 LP</span>
+            <span class="tag">Uniswap Trading API</span>
+            <span class="tag">Aave V3</span>
+            <span class="tag">AI Swap Reasoning</span>
+            <span class="tag">Risk Scoring</span>
+            <span class="tag">Circuit Breakers</span>
+          </div>
+          <div class="agent-links">
+            <a href="https://github.com/SenorCodigo69/synthesis-yield-agent" target="_blank">GitHub</a>
+            <a href="dashboard.html">Live Dashboard</a>
+            <a href="index.html">Landing Page</a>
+          </div>
         </div>
       </div>
-      <p style="opacity:0.5;font-size:11px;margin-top:10px;line-height:1.6;">
-        The ZK layer proves the agent is <em>authorized and within budget</em> without revealing the policy. Transactions remain public on Base — true tx privacy would require a shielded chain (e.g., Aztec). Selective disclosure lets auditors verify compliance without seeing the full policy.
+
+      <!-- ZK Agent -->
+      <div class="agent-card">
+        <div class="agent-header">
+          <div>
+            <div class="agent-name">ZK Privacy Agent</div>
+            <div class="agent-desc">Privacy-preserving execution layer. Generates Groth16 ZK proofs for authorization, budget, and spend — gates Uniswap V4 swaps without revealing private data.</div>
+          </div>
+          <span class="status-badge status-deployed">Deployed</span>
+        </div>
+        <div class="agent-body">
+          <div class="agent-grid">
+            <div class="agent-field">
+              <div class="label">Chain</div>
+              <div class="value">Base Mainnet</div>
+            </div>
+            <div class="agent-field">
+              <div class="label">Tests</div>
+              <div class="value">139 (89 Py + 50 Sol)</div>
+            </div>
+            <div class="agent-field">
+              <div class="label">Security Audits</div>
+              <div class="value">4 completed (54 findings)</div>
+            </div>
+            <div class="agent-field">
+              <div class="label">ZK Circuits</div>
+              <div class="value">3 Circom (Groth16)</div>
+            </div>
+            <div class="agent-field">
+              <div class="label">V4 Hook</div>
+              <div class="value">ZKGatedHook (beforeSwap)</div>
+            </div>
+            <div class="agent-field">
+              <div class="label">ERC-8004</div>
+              <div class="value"><a href="https://basescan.org/address/0x8d691720bF8C81044DB1a77b82D0eF5f5bffdE6C" target="_blank">#32271</a></div>
+            </div>
+          </div>
+          <div class="contracts">
+            <div class="contracts-title">Deployed Contracts (Base)</div>
+            <div class="contract-row">
+              <span class="contract-name">ZKGatedHook v2</span>
+              <a class="contract-addr" href="https://basescan.org/address/0x45eC09fB08B83f104F15f3709F4677736112c080" target="_blank">0x45eC...c080</a>
+            </div>
+            <div class="contract-row">
+              <span class="contract-name">AuthorizationVerifier</span>
+              <a class="contract-addr" href="https://basescan.org/address/0x2a8FBE80BDc9cb907b20acBE84F13a858CBEdAe4" target="_blank">0x2a8F...dAe4</a>
+            </div>
+            <div class="contract-row">
+              <span class="contract-name">BudgetRangeVerifier</span>
+              <a class="contract-addr" href="https://basescan.org/address/0x8d7520a34f3EFbB86d02232C4fc31dB9415142d3" target="_blank">0x8d75...42d3</a>
+            </div>
+            <div class="contract-row">
+              <span class="contract-name">CumulativeSpendVerifier</span>
+              <a class="contract-addr" href="https://basescan.org/address/0x1c7A42fea03ec0C86c94B886588a2680184428D9" target="_blank">0x1c7A...28D9</a>
+            </div>
+            <div class="contract-row">
+              <span class="contract-name">PolicyCommitment</span>
+              <a class="contract-addr" href="https://basescan.org/address/0x049B09c4aE1974F84164b65a9f0AB412dA9814f2" target="_blank">0x049B...14f2</a>
+            </div>
+          </div>
+          <div class="tags">
+            <span class="tag chain">Base</span>
+            <span class="tag">Groth16</span>
+            <span class="tag">Circom</span>
+            <span class="tag">Uniswap V4 Hook</span>
+            <span class="tag">EdDSA</span>
+            <span class="tag">Selective Disclosure</span>
+            <span class="tag">ERC-8004</span>
+          </div>
+          <div class="agent-links">
+            <a href="https://github.com/SenorCodigo69/synthesis-zk-agent" target="_blank">GitHub</a>
+            <a href="https://basescan.org/address/0x45eC09fB08B83f104F15f3709F4677736112c080" target="_blank">V4 Hook on BaseScan</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- stETH Treasury Agent -->
+      <div class="agent-card">
+        <div class="agent-header">
+          <div>
+            <div class="agent-name">stETH Treasury Agent</div>
+            <div class="agent-desc">Yield-bearing operating budget backed by Lido staked ETH. Agent can only withdraw accrued staking yield — principal is structurally inaccessible at the contract level.</div>
+          </div>
+          <span class="status-badge status-live">Live</span>
+        </div>
+        <div class="agent-body">
+          <div class="agent-grid">
+            <div class="agent-field">
+              <div class="label">Chain</div>
+              <div class="value">Ethereum Mainnet</div>
+            </div>
+            <div class="agent-field">
+              <div class="label">Tests</div>
+              <div class="value">27 passing (Foundry)</div>
+            </div>
+            <div class="agent-field">
+              <div class="label">Principal</div>
+              <div class="value">0.0065 stETH</div>
+            </div>
+            <div class="agent-field">
+              <div class="label">Yield Rate</div>
+              <div class="value">~3.5% APR (Lido)</div>
+            </div>
+            <div class="agent-field">
+              <div class="label">Per-Tx Cap</div>
+              <div class="value">0.1 stETH</div>
+            </div>
+            <div class="agent-field">
+              <div class="label">Cooldown</div>
+              <div class="value">1 hour</div>
+            </div>
+          </div>
+          <div class="contracts">
+            <div class="contracts-title">Deployed Contract (Ethereum)</div>
+            <div class="contract-row">
+              <span class="contract-name">AgentTreasury</span>
+              <a class="contract-addr" href="https://etherscan.io/address/0x049B09c4aE1974F84164b65a9f0AB412dA9814f2" target="_blank">0x049B...14f2</a>
+            </div>
+            <div class="contract-row">
+              <span class="contract-name">Deposit (0.008 ETH &rarr; Lido)</span>
+              <a class="contract-addr" href="https://etherscan.io/tx/0xbea50de54a3ee044cbf187189e83cc08c0829dcf3dbd4fa6fd2aaa3c7b9578c7" target="_blank">0xbea5...78c7</a>
+            </div>
+            <div class="contract-row">
+              <span class="contract-name">Wallet</span>
+              <a class="contract-addr" href="https://etherscan.io/address/0x8d691720bF8C81044DB1a77b82D0eF5f5bffdE6C" target="_blank">0x8d69...dE6C</a>
+            </div>
+          </div>
+          <div style="margin-top:16px;padding:12px 16px;background:rgba(0,184,148,0.05);border:1px solid rgba(0,184,148,0.15);border-radius:4px;">
+            <div style="font-size:0.8rem;color:var(--muted);line-height:1.8;">
+              <strong style="color:var(--green);">Safety:</strong>
+              Principal protected by on-chain invariant &bull;
+              Recipient whitelist enforced &bull;
+              Per-tx cap + cooldown &bull;
+              Owner can exit at any time &bull;
+              Verified on Sourcify + Blockscout
+            </div>
+          </div>
+          <div class="tags">
+            <span class="tag chain">Ethereum</span>
+            <span class="tag">Lido stETH</span>
+            <span class="tag">wstETH</span>
+            <span class="tag">Yield-Bearing Budget</span>
+            <span class="tag">Principal Protection</span>
+            <span class="tag">Foundry</span>
+          </div>
+          <div class="agent-links">
+            <a href="https://github.com/SenorCodigo69/synthesis-steth-treasury" target="_blank">GitHub</a>
+            <a href="https://etherscan.io/address/0x049B09c4aE1974F84164b65a9f0AB412dA9814f2" target="_blank">Etherscan</a>
+            <a href="https://eth.blockscout.com/address/0x049B09c4aE1974F84164b65a9f0AB412dA9814f2" target="_blank">Blockscout (Verified)</a>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ZK Transparency Note -->
+    <section>
+      <h2>What the ZK Layer Does (and Doesn't) Hide</h2>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+        <div style="background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:4px;padding:20px;">
+          <div style="font-weight:600;font-size:0.85rem;margin-bottom:10px;color:var(--accent);">Hidden (ZK-proven)</div>
+          <div style="color:var(--muted);font-size:0.8rem;line-height:1.9;">
+            &bull; Owner identity (who delegated the agent)<br>
+            &bull; Spending limits and budget ranges<br>
+            &bull; Cumulative spend caps and history<br>
+            &bull; Policy parameters and constraints<br>
+            &bull; Delegation chain details
+          </div>
+        </div>
+        <div style="background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--orange);border-radius:4px;padding:20px;">
+          <div style="font-weight:600;font-size:0.85rem;margin-bottom:10px;color:var(--orange);">Public (on-chain)</div>
+          <div style="color:var(--muted);font-size:0.8rem;line-height:1.9;">
+            &bull; Agent wallet address<br>
+            &bull; Transaction amounts and destinations<br>
+            &bull; Deposits, swaps, LP positions<br>
+            &bull; Token balances<br>
+            &bull; All tx history on BaseScan
+          </div>
+        </div>
+      </div>
+      <p style="color:var(--muted);font-size:0.8rem;margin-top:16px;line-height:1.6;">
+        The ZK layer proves the agent is <em>authorized and within budget</em> without revealing the policy behind it. Transactions themselves remain public on Base — true tx privacy would require a shielded chain (e.g., Aztec). Selective disclosure lets auditors verify compliance without seeing the full policy.
       </p>
-    </div>
-  </div>
+    </section>
 
-  <!-- Unified Pipeline -->
-  <div class="win">
-    <div class="win-title"><span class="win-close"></span><span class="win-title-text">Unified Pipeline</span><span class="win-stripes"></span></div>
-    <div class="win-body">
-      <div class="pipeline-flow">
-        <span class="flow">Yield Agent</span> <span style="opacity:0.5;">scans rates</span> <span class="arrow">&rarr;</span>
-        <span class="flow">AI Brain</span> <span style="opacity:0.5;">recommends action</span> <span class="arrow">&rarr;</span>
-        <span class="flow">ZK Agent</span> <span style="opacity:0.5;">proves authorization</span><br>
-        <span class="arrow">&rarr;</span> <span class="flow">V4 Hook</span> <span style="opacity:0.5;">verifies proof on-chain</span>
-        <span class="arrow">&rarr;</span> <span class="flow-green">Swap</span> <span style="opacity:0.5;">via Uniswap</span>
-        <span class="arrow">&rarr;</span> <span class="flow-green">Deposit & Earn</span> <span style="opacity:0.5;">(Aave / LP)</span><br>
-        <span class="arrow">&rarr;</span> <span class="flow-warn">stETH Treasury</span> <span style="opacity:0.5;">funds agent budget via Lido staking yield (Ethereum)</span>
+    <!-- Architecture Overview -->
+    <section>
+      <h2>Unified Pipeline</h2>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:24px;text-align:center;line-height:2.4;font-size:0.85rem;">
+        <div style="color:var(--muted);font-size:0.7rem;text-transform:uppercase;letter-spacing:1px;margin-bottom:12px;">End-to-End Flow</div>
+        <span style="color:var(--accent2);font-weight:700;">Yield Agent</span>
+        <span style="color:var(--muted);"> scans rates </span>
+        <span style="color:var(--muted);">&rarr;</span>
+        <span style="color:var(--accent2);font-weight:700;"> AI Brain</span>
+        <span style="color:var(--muted);"> recommends action </span>
+        <span style="color:var(--muted);">&rarr;</span>
+        <span style="color:var(--accent);font-weight:700;"> ZK Agent</span>
+        <span style="color:var(--muted);"> proves authorization </span>
+        <br>
+        <span style="color:var(--muted);">&rarr;</span>
+        <span style="color:var(--accent);font-weight:700;"> V4 Hook</span>
+        <span style="color:var(--muted);"> verifies proof on-chain </span>
+        <span style="color:var(--muted);">&rarr;</span>
+        <span style="color:var(--green);font-weight:700;"> Swap</span>
+        <span style="color:var(--muted);"> via Uniswap </span>
+        <span style="color:var(--muted);">&rarr;</span>
+        <span style="color:var(--green);font-weight:700;"> Deposit &amp; Earn</span>
+        <span style="color:var(--muted);"> (Aave / LP)</span>
+        <br>
+        <span style="color:var(--muted);">&rarr;</span>
+        <span style="color:var(--orange);font-weight:700;"> stETH Treasury</span>
+        <span style="color:var(--muted);"> funds agent budget via Lido staking yield (Ethereum) </span>
       </div>
-    </div>
+    </section>
+
+    <footer>
+      <p class="hackathon">EF Synthesis Hackathon 2026</p>
+      <p>Built with Claude Code across 45 sessions</p>
+    </footer>
+
   </div>
-
-  <div style="text-align:center;padding:20px 0 48px;opacity:0.5;font-size:12px;">
-    <p style="font-weight:bold;">EF Synthesis Hackathon 2026</p>
-    <p>Built with Claude Code across 53 sessions</p>
-  </div>
-
-</div>
-
-<div class="statusbar">
-  <span class="statusbar-cell">Agent Fleet</span>
-  <span class="statusbar-cell" style="color:var(--green);">3 AGENTS</span>
-  <span class="statusbar-cell">Base + Ethereum</span>
-  <span class="statusbar-cell">7 contracts</span>
-</div>
-
-<script>function toggleTheme() { const h = document.documentElement; h.dataset.theme = h.dataset.theme === 'dark' ? 'light' : 'dark'; }</script>
 </body>
 </html>
