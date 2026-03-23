@@ -1,512 +1,209 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Synthesis Yield Agent — Autonomous DeFi with ZK Privacy</title>
-  <style>
-    :root {
-      --bg: #0a0a0f;
-      --surface: #12121a;
-      --border: #1e1e2e;
-      --text: #e0e0e8;
-      --muted: #8888a0;
-      --accent: #6c5ce7;
-      --accent2: #00cec9;
-      --green: #00b894;
-      --orange: #fdcb6e;
-      --red: #d63031;
-    }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Synthesis Yield Agent</title>
+<style>
+  @font-face { font-family: 'Redaction35'; src: url('fonts/Redaction35-BWXjw.otf') format('opentype'); font-weight: normal; }
+  @font-face { font-family: 'Redaction35'; src: url('fonts/Redaction35Bold-MV3LP.otf') format('opentype'); font-weight: bold; }
+  @font-face { font-family: 'Redaction35'; src: url('fonts/Redaction35Italic-rgDrB.otf') format('opentype'); font-style: italic; }
 
-    * { margin: 0; padding: 0; box-sizing: border-box; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
 
-    body {
-      background: var(--bg);
-      color: var(--text);
-      font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
-      line-height: 1.6;
-      -webkit-font-smoothing: antialiased;
-    }
+  :root {
+    --bg: #fff; --fg: #000; --bg-alt: #f5f5f5; --border: #000; --dot: 1px dotted #000;
+    --green: #118844; --red: #cc2244; --warn: #cc8800; --blue: #2255cc; --accent: #2255cc;
+  }
+  [data-theme="dark"] {
+    --bg: #1a1a1e; --fg: #c8c8c8; --bg-alt: #222226; --border: #555; --dot: 1px dotted #555;
+    --green: #44cc88; --red: #ff5577; --warn: #ffcc44; --blue: #6699ff; --accent: #6699ff;
+  }
 
-    .container {
-      max-width: 900px;
-      margin: 0 auto;
-      padding: 0 24px;
-    }
+  body { background: var(--bg); color: var(--fg); font-family: 'Redaction35', 'Georgia', serif; font-size: 13px; transition: background 0.15s, color 0.15s; }
 
-    /* Hero */
-    .hero {
-      padding: 80px 0 60px;
-      text-align: center;
-    }
+  /* Menubar */
+  .menubar { background: var(--bg); border-bottom: 2px solid var(--border); padding: 4px 12px; display: flex; align-items: center; position: sticky; top: 0; z-index: 100; }
+  .menubar-logo { font-size: 16px; font-weight: bold; margin-right: 16px; letter-spacing: -0.5px; font-style: italic; }
+  .menubar-item { padding: 2px 12px; font-size: 13px; font-weight: bold; cursor: default; text-decoration: none; color: var(--fg); border: 1px solid transparent; }
+  .menubar-item:hover { background: var(--fg); color: var(--bg); }
+  .menubar-item.active { background: var(--fg); color: var(--bg); }
+  .toggle-theme { cursor: pointer; border: 1px solid var(--border) !important; margin-left: auto; font-size: 12px; padding: 2px 10px; }
 
-    .hero h1 {
-      font-size: 2.4rem;
-      font-weight: 700;
-      letter-spacing: -0.5px;
-      margin-bottom: 12px;
-    }
+  .desktop { padding: 12px 16px; max-width: 900px; margin: 0 auto; display: flex; flex-direction: column; gap: 12px; }
 
-    .hero h1 span { color: var(--accent); }
+  /* System 6 Window */
+  .win { border: 2px solid var(--border); background: var(--bg); margin-bottom: 10px; }
+  .win-title { background: var(--bg); border-bottom: 2px solid var(--border); padding: 3px 8px; display: flex; align-items: center; gap: 8px; cursor: default; user-select: none; }
+  .win-close { width: 14px; height: 14px; border: 2px solid var(--border); display: inline-block; flex-shrink: 0; }
+  .win-title-text { flex: 1; text-align: center; font-size: 13px; font-weight: bold; letter-spacing: 0.5px; text-transform: uppercase; }
+  .win-stripes { flex: 0 0 40px; height: 14px; background: repeating-linear-gradient(0deg, var(--border) 0px, var(--border) 2px, var(--bg) 2px, var(--bg) 4px); }
+  .win-body { padding: 12px; }
 
-    .hero .tagline {
-      font-size: 1.1rem;
-      color: var(--muted);
-      margin-bottom: 24px;
-    }
+  /* Hero */
+  .hero { padding: 48px 0 32px; text-align: center; }
+  .hero h1 { font-size: 28px; font-style: italic; letter-spacing: 1px; margin-bottom: 8px; }
+  .hero h1 span { color: var(--accent); }
+  .hero .tagline { font-size: 14px; color: var(--fg); opacity: 0.6; margin-bottom: 20px; }
 
-    .badges {
-      display: flex;
-      gap: 12px;
-      justify-content: center;
-      flex-wrap: wrap;
-      margin-bottom: 32px;
-    }
+  .badges { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-bottom: 20px; }
+  .badge { display: inline-block; padding: 2px 10px; font-size: 10px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; border: 2px solid; }
+  .badge-live { border-color: var(--green); color: var(--green); }
+  .badge-zk { border-color: var(--accent); color: var(--accent); }
+  .badge-uni { border-color: var(--warn); color: var(--warn); }
+  .badge-self { border-color: var(--fg); color: var(--fg); opacity: 0.7; }
 
-    .badge {
-      display: inline-block;
-      padding: 4px 12px;
-      border-radius: 4px;
-      font-size: 0.75rem;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
+  .btn-row { display: flex; gap: 12px; justify-content: center; margin-bottom: 16px; }
+  .btn { padding: 6px 20px; font-family: inherit; font-size: 12px; font-weight: bold; text-decoration: none; text-transform: uppercase; letter-spacing: 1px; border: 2px solid var(--border); color: var(--fg); background: var(--bg); cursor: pointer; }
+  .btn:hover { background: var(--fg); color: var(--bg); }
+  .btn-primary { background: var(--fg); color: var(--bg); }
+  .btn-primary:hover { background: var(--bg); color: var(--fg); }
 
-    .badge.live { background: rgba(0,184,148,0.15); color: var(--green); border: 1px solid rgba(0,184,148,0.3); }
-    .badge.zk { background: rgba(108,92,231,0.15); color: var(--accent); border: 1px solid rgba(108,92,231,0.3); }
-    .badge.uni { background: rgba(253,203,110,0.15); color: var(--orange); border: 1px solid rgba(253,203,110,0.3); }
+  /* Stats row */
+  .stat { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: var(--dot); font-size: 13px; }
+  .stat:last-child { border-bottom: none; }
+  .stat-label { opacity: 0.6; }
+  .stat-value { font-weight: bold; color: var(--green); }
 
-    /* Sections */
-    section {
-      padding: 48px 0;
-      border-top: 1px solid var(--border);
-    }
+  /* Pipeline steps */
+  .step { display: flex; gap: 12px; padding: 8px 0; border-bottom: var(--dot); }
+  .step:last-child { border-bottom: none; }
+  .step-num { color: var(--accent); font-weight: bold; min-width: 24px; font-size: 12px; }
+  .step-title { font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; font-size: 12px; }
+  .step-desc { font-size: 12px; opacity: 0.65; margin-top: 2px; }
 
-    section h2 {
-      font-size: 1.3rem;
-      margin-bottom: 24px;
-      color: var(--accent2);
-    }
+  /* Architecture layers */
+  .layer { padding: 10px; border: 2px solid var(--border); margin-bottom: 6px; text-align: center; font-size: 12px; line-height: 1.8; }
+  .layer:last-child { margin-bottom: 0; }
+  .layer-label { font-size: 10px; text-transform: uppercase; letter-spacing: 2px; font-weight: bold; opacity: 0.5; margin-bottom: 4px; }
+  .flow { color: var(--accent); font-weight: bold; }
+  .arrow { opacity: 0.4; margin: 0 4px; }
 
-    /* Pipeline */
-    .pipeline {
-      display: grid;
-      gap: 2px;
-    }
+  /* Tables */
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th { text-align: left; padding: 4px 6px; border-bottom: 2px solid var(--border); font-size: 11px; text-transform: uppercase; letter-spacing: 1px; }
+  td { padding: 4px 6px; border-bottom: 1px solid var(--border); }
+  td.addr { color: var(--accent); word-break: break-all; font-size: 11px; }
 
-    .step {
-      background: var(--surface);
-      padding: 16px 20px;
-      display: flex;
-      align-items: flex-start;
-      gap: 16px;
-      border-left: 3px solid var(--border);
-      transition: border-color 0.2s;
-    }
+  /* Guardrails */
+  .guardrail { padding: 6px 10px; border-left: 3px solid var(--green); border-bottom: var(--dot); font-size: 12px; }
+  .guardrail:last-child { border-bottom: none; }
 
-    .step:hover { border-left-color: var(--accent); }
+  /* Code */
+  .code { padding: 12px; border: 2px solid var(--border); font-family: 'SF Mono', 'Consolas', monospace; font-size: 11px; line-height: 1.8; overflow-x: auto; background: var(--bg-alt); }
+  .code .comment { opacity: 0.5; }
+  .code .cmd { color: var(--green); }
 
-    .step-num {
-      color: var(--accent);
-      font-weight: 700;
-      font-size: 0.85rem;
-      min-width: 24px;
-    }
+  /* Links grid */
+  .links { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 8px; }
+  .link-card { border: 2px solid var(--border); padding: 12px; text-decoration: none; color: var(--fg); display: block; }
+  .link-card:hover { background: var(--fg); color: var(--bg); }
+  .link-card h3 { font-size: 13px; margin-bottom: 4px; }
+  .link-card p { font-size: 11px; opacity: 0.65; }
 
-    .step-title {
-      font-weight: 600;
-      color: var(--text);
-    }
+  /* Status bar */
+  .statusbar { border-top: 2px solid var(--border); padding: 3px 12px; display: flex; gap: 2px; font-size: 11px; background: var(--bg); position: fixed; bottom: 0; left: 0; right: 0; z-index: 100; }
+  .statusbar-cell { padding: 1px 10px; border-right: 1px solid var(--border); }
+  .statusbar-cell:last-child { border-right: none; }
 
-    .step-desc {
-      color: var(--muted);
-      font-size: 0.85rem;
-      margin-top: 4px;
-    }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
 
-    /* Stats Grid */
-    .stats {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 16px;
-    }
-
-    .stat {
-      background: var(--surface);
-      padding: 20px;
-      border: 1px solid var(--border);
-      border-radius: 4px;
-    }
-
-    .stat-value {
-      font-size: 1.4rem;
-      font-weight: 700;
-      color: var(--accent2);
-    }
-
-    .stat-label {
-      font-size: 0.75rem;
-      color: var(--muted);
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      margin-top: 4px;
-    }
-
-    /* Contracts Table */
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 0.85rem;
-    }
-
-    th, td {
-      text-align: left;
-      padding: 10px 12px;
-      border-bottom: 1px solid var(--border);
-    }
-
-    th {
-      color: var(--muted);
-      font-weight: 600;
-      text-transform: uppercase;
-      font-size: 0.7rem;
-      letter-spacing: 0.5px;
-    }
-
-    td.addr {
-      font-size: 0.75rem;
-      color: var(--accent2);
-      word-break: break-all;
-    }
-
-    /* Architecture */
-    .arch {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 4px;
-      padding: 32px 24px;
-      text-align: center;
-      font-size: 0.9rem;
-      line-height: 2;
-    }
-
-    .arch .flow {
-      color: var(--accent);
-      font-weight: 700;
-    }
-
-    .arch .arrow {
-      color: var(--muted);
-      margin: 0 4px;
-    }
-
-    .arch .layer {
-      margin: 16px 0;
-      padding: 12px;
-      border: 1px dashed var(--border);
-      border-radius: 4px;
-    }
-
-    .arch .layer-label {
-      font-size: 0.7rem;
-      color: var(--muted);
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      margin-bottom: 8px;
-    }
-
-    /* Code Block */
-    .code {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 4px;
-      padding: 20px;
-      overflow-x: auto;
-      font-size: 0.85rem;
-      line-height: 1.8;
-    }
-
-    .code .comment { color: var(--muted); }
-    .code .cmd { color: var(--accent2); }
-
-    /* Links */
-    a {
-      color: var(--accent);
-      text-decoration: none;
-    }
-
-    a:hover { text-decoration: underline; }
-
-    .links {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-      gap: 16px;
-    }
-
-    .link-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 4px;
-      padding: 20px;
-      transition: border-color 0.2s;
-    }
-
-    .link-card:hover { border-color: var(--accent); }
-
-    .link-card h3 {
-      font-size: 0.9rem;
-      margin-bottom: 8px;
-    }
-
-    .link-card p {
-      font-size: 0.8rem;
-      color: var(--muted);
-    }
-
-    /* Safety */
-    .guardrails {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-      gap: 12px;
-    }
-
-    .guardrail {
-      padding: 12px 16px;
-      background: var(--surface);
-      border-left: 3px solid var(--green);
-      font-size: 0.85rem;
-    }
-
-    /* Footer */
-    footer {
-      padding: 48px 0;
-      border-top: 1px solid var(--border);
-      text-align: center;
-      color: var(--muted);
-      font-size: 0.8rem;
-    }
-
-    footer .hackathon {
-      font-size: 0.9rem;
-      color: var(--text);
-      margin-bottom: 8px;
-    }
-  </style>
+  .subtitle { font-size: 12px; opacity: 0.55; max-width: 550px; margin: 0 auto; line-height: 1.7; }
+</style>
 </head>
 <body>
-  <div class="container">
 
-    <nav style="display:flex;justify-content:center;gap:24px;padding:12px 0;font-size:0.8rem;border-bottom:1px solid var(--border);">
-      <a href="index.html" style="color:var(--accent2);font-weight:700;">Home</a>
-      <a href="dashboard.html">Dashboard</a>
-      <a href="agents.html">Agent Fleet</a>
-      <a href="https://github.com/SenorCodigo69/synthesis-yield-agent" target="_blank">GitHub</a>
-    </nav>
+<div class="menubar">
+  <span class="menubar-logo">Synthesis</span>
+  <a href="index.html" class="menubar-item active">Home</a>
+  <a href="dashboard.html" class="menubar-item">Dashboard</a>
+  <a href="agents.html" class="menubar-item">Agent Fleet</a>
+  <a href="https://github.com/SenorCodigo69/synthesis-yield-agent" target="_blank" class="menubar-item">GitHub</a>
+  <span class="menubar-item toggle-theme" onclick="toggleTheme()">Light/Dark</span>
+</div>
 
-    <!-- Hero -->
-    <div class="hero">
-      <div style="margin-bottom:20px;">
-        <span style="font-size:2.4rem;">&#x1f916;</span>
-      </div>
-      <h1>Synthesis <span>Yield Agent</span></h1>
-      <p class="tagline">Autonomous DeFi agent that earns yield, proves privacy, and gets smarter over time</p>
-      <div class="badges">
-        <span class="badge live">Live on Base + Ethereum</span>
-        <span class="badge zk">ZK Privacy (Groth16)</span>
-        <span class="badge uni">Uniswap V3 LP + V4 Hooks</span>
-        <span class="badge" style="background:rgba(108,92,231,0.15);color:#a29bfe;border:1px solid rgba(162,155,254,0.3);">Self-Improving</span>
-      </div>
-      <div style="display:flex;gap:16px;justify-content:center;margin-bottom:24px;">
-        <a href="dashboard.html" style="background:var(--accent);color:white;padding:10px 24px;border-radius:6px;font-size:0.85rem;font-weight:600;text-decoration:none;">Live Dashboard</a>
-        <a href="https://github.com/SenorCodigo69/synthesis-yield-agent" target="_blank" style="background:var(--surface);color:var(--text);padding:10px 24px;border-radius:6px;font-size:0.85rem;font-weight:600;border:1px solid var(--border);text-decoration:none;">GitHub</a>
-      </div>
-      <p style="color: var(--muted); font-size: 0.85rem; max-width: 600px; margin: 0 auto;">
-        Two AI agents, one pipeline. The Yield Agent decides <em>what</em> to do.
-        The ZK Agent proves it's <em>authorized</em> to do it. The agent tracks every decision,
-        compares predicted vs actual yield, and adjusts its own risk weights. No human in the loop.
-      </p>
+<div class="desktop">
+
+  <!-- Hero -->
+  <div class="hero">
+    <h1>Synthesis <span>Yield Agent</span></h1>
+    <p class="tagline">Autonomous DeFi agent that earns yield, proves privacy, and gets smarter over time</p>
+    <div class="badges">
+      <span class="badge badge-live">Live on Base + Ethereum</span>
+      <span class="badge badge-zk">ZK Privacy (Groth16)</span>
+      <span class="badge badge-uni">Uniswap V3 LP + V4 Hooks</span>
+      <span class="badge badge-self">Self-Improving</span>
     </div>
+    <div class="btn-row">
+      <a href="dashboard.html" class="btn btn-primary">Live Dashboard</a>
+      <a href="https://github.com/SenorCodigo69/synthesis-yield-agent" target="_blank" class="btn">GitHub</a>
+    </div>
+    <p class="subtitle">
+      Two AI agents, one pipeline. The Yield Agent decides <em>what</em> to do.
+      The ZK Agent proves it's <em>authorized</em> to do it. The agent tracks every decision,
+      compares predicted vs actual yield, and adjusts its own risk weights. No human in the loop.
+    </p>
+  </div>
 
-    <!-- Architecture -->
-    <section>
-      <h2>Architecture</h2>
-      <div class="arch">
-        <div class="layer">
-          <div class="layer-label">AI Decision Layer</div>
-          <span class="flow">Claude Haiku</span>
-          <span class="arrow">&rarr;</span>
-          analyzes yields, balances, gas
-          <span class="arrow">&rarr;</span>
-          <span class="flow">recommends action</span>
-        </div>
-        <div class="layer">
-          <div class="layer-label">ZK Privacy Layer</div>
-          <span class="flow">3 Groth16 proofs</span>
-          <span class="arrow">&rarr;</span>
-          authorization + budget + cumulative spend
-          <span class="arrow">&rarr;</span>
-          <span class="flow">hookData</span>
-        </div>
-        <div class="layer">
-          <div class="layer-label">Treasury Layer (Ethereum Mainnet)</div>
-          <span class="flow">Lido stETH</span>
-          <span class="arrow">&rarr;</span>
-          yield-bearing agent budget
-          <span class="arrow">&rarr;</span>
-          <span class="flow">agent withdraws only yield</span>
-        </div>
-        <div class="layer">
-          <div class="layer-label">Execution Layer (Base Mainnet)</div>
-          <span class="flow">Uniswap V4 Hook</span>
-          <span class="arrow">&rarr;</span>
-          verifies ZK proof on-chain
-          <span class="arrow">&rarr;</span>
-          <span class="flow">swap</span>
-          <span class="arrow">&rarr;</span>
-          <span class="flow">LP / Aave</span>
-        </div>
-      </div>
-    </section>
+  <!-- Architecture -->
+  <div class="win">
+    <div class="win-title"><span class="win-close"></span><span class="win-title-text">Architecture</span><span class="win-stripes"></span></div>
+    <div class="win-body">
+      <div class="layer"><div class="layer-label">AI Decision Layer</div><span class="flow">Claude Haiku</span> <span class="arrow">&rarr;</span> analyzes yields, balances, gas <span class="arrow">&rarr;</span> <span class="flow">recommends action</span></div>
+      <div class="layer"><div class="layer-label">ZK Privacy Layer</div><span class="flow">3 Groth16 proofs</span> <span class="arrow">&rarr;</span> authorization + budget + cumulative spend <span class="arrow">&rarr;</span> <span class="flow">hookData</span></div>
+      <div class="layer"><div class="layer-label">Treasury Layer (Ethereum Mainnet)</div><span class="flow">Lido stETH</span> <span class="arrow">&rarr;</span> yield-bearing agent budget <span class="arrow">&rarr;</span> <span class="flow">agent withdraws only yield</span></div>
+      <div class="layer"><div class="layer-label">Execution Layer (Base Mainnet)</div><span class="flow">Uniswap V4 Hook</span> <span class="arrow">&rarr;</span> verifies ZK proof on-chain <span class="arrow">&rarr;</span> <span class="flow">swap</span> <span class="arrow">&rarr;</span> <span class="flow">LP / Aave</span></div>
+    </div>
+  </div>
 
-    <!-- Pipeline -->
-    <section>
-      <h2>7-Step Pipeline</h2>
-      <div class="pipeline">
-        <div class="step">
-          <span class="step-num">01</span>
-          <div>
-            <div class="step-title">OBSERVE</div>
-            <div class="step-desc">Scan DeFi yield rates (Aave, Morpho, Compound) + wallet balances + Uniswap LP pools via DeFi Llama + on-chain validation</div>
-          </div>
-        </div>
-        <div class="step">
-          <span class="step-num">02</span>
-          <div>
-            <div class="step-title">THINK</div>
-            <div class="step-desc">Claude Haiku analyzes rates, balances, gas costs, and LP yields — recommends swap, deposit, LP, or hold</div>
-          </div>
-        </div>
-        <div class="step">
-          <span class="step-num">03</span>
-          <div>
-            <div class="step-title">PROVE</div>
-            <div class="step-desc">Generate 3 Groth16 ZK proofs: agent authorization (EdDSA), budget range, cumulative spend — all without revealing private data</div>
-          </div>
-        </div>
-        <div class="step">
-          <span class="step-num">04</span>
-          <div>
-            <div class="step-title">GATE</div>
-            <div class="step-desc">Encode authorization proof as Uniswap V4 hookData. The ZKGatedHook verifies the proof before allowing the swap</div>
-          </div>
-        </div>
-        <div class="step">
-          <span class="step-num">05</span>
-          <div>
-            <div class="step-title">SWAP</div>
-            <div class="step-desc">Execute token swap via Uniswap Trading API with Permit2 signing, optimal routing, and slippage protection</div>
-          </div>
-        </div>
-        <div class="step">
-          <span class="step-num">06</span>
-          <div>
-            <div class="step-title">EARN</div>
-            <div class="step-desc">Deposit into highest-yield protocol (Aave V3) or mint Uniswap V3 full-range LP position for swap fee yield</div>
-          </div>
-        </div>
-        <div class="step">
-          <span class="step-num">07</span>
-          <div>
-            <div class="step-title">DISCLOSE</div>
-            <div class="step-desc">Generate selective ZK disclosure proofs for auditors — prove compliance without revealing transaction amounts or wallet identity</div>
-          </div>
-        </div>
-      </div>
-    </section>
+  <!-- Pipeline -->
+  <div class="win">
+    <div class="win-title"><span class="win-close"></span><span class="win-title-text">7-Step Pipeline</span><span class="win-stripes"></span></div>
+    <div class="win-body">
+      <div class="step"><span class="step-num">01</span><div><div class="step-title">Observe</div><div class="step-desc">Scan DeFi yield rates (Aave, Morpho, Compound) + wallet balances + Uniswap LP pools — on-chain reads + DeFi Llama cross-validation</div></div></div>
+      <div class="step"><span class="step-num">02</span><div><div class="step-title">Think</div><div class="step-desc">Claude Haiku analyzes rates, balances, gas costs, and LP yields — recommends swap, deposit, LP, or hold</div></div></div>
+      <div class="step"><span class="step-num">03</span><div><div class="step-title">Prove</div><div class="step-desc">Generate 3 Groth16 ZK proofs: agent authorization (EdDSA), budget range, cumulative spend — all without revealing private data</div></div></div>
+      <div class="step"><span class="step-num">04</span><div><div class="step-title">Gate</div><div class="step-desc">Encode authorization proof as Uniswap V4 hookData. The ZKGatedHook verifies the proof before allowing the swap</div></div></div>
+      <div class="step"><span class="step-num">05</span><div><div class="step-title">Swap</div><div class="step-desc">Execute token swap via Uniswap Trading API with Permit2 signing, optimal routing, and slippage protection</div></div></div>
+      <div class="step"><span class="step-num">06</span><div><div class="step-title">Earn</div><div class="step-desc">Deposit into highest-yield protocol (Aave V3) or mint Uniswap V3 full-range LP position for swap fee yield</div></div></div>
+      <div class="step"><span class="step-num">07</span><div><div class="step-title">Disclose</div><div class="step-desc">Generate selective ZK disclosure proofs for auditors — prove compliance without revealing transaction amounts or wallet identity</div></div></div>
+    </div>
+  </div>
 
-    <!-- Live Stats -->
-    <section>
-      <h2>Live on Base + Ethereum</h2>
-      <div class="stats">
-        <div class="stat">
-          <div class="stat-value">7</div>
-          <div class="stat-label">Contracts Deployed</div>
-        </div>
-        <div class="stat">
-          <div class="stat-value">2</div>
-          <div class="stat-label">Chains (Base + Ethereum)</div>
-        </div>
-        <div class="stat">
-          <div class="stat-value">594</div>
-          <div class="stat-label">Tests Passing</div>
-        </div>
-        <div class="stat">
-          <div class="stat-value">14</div>
-          <div class="stat-label">Security Audits</div>
-        </div>
-        <div class="stat">
-          <div class="stat-value">24/7</div>
-          <div class="stat-label">Live Agent on Hetzner</div>
-        </div>
-        <div class="stat">
-          <div class="stat-value">$22.66</div>
-          <div class="stat-label">Live USDC Under Management</div>
-        </div>
-      </div>
-    </section>
+  <!-- Live Stats -->
+  <div class="win">
+    <div class="win-title"><span class="win-close"></span><span class="win-title-text">Live Stats</span><span class="win-stripes"></span></div>
+    <div class="win-body">
+      <div class="stat"><span class="stat-label">Contracts Deployed</span><span class="stat-value">7</span></div>
+      <div class="stat"><span class="stat-label">Chains</span><span class="stat-value">Base + Ethereum</span></div>
+      <div class="stat"><span class="stat-label">Tests Passing</span><span class="stat-value">594</span></div>
+      <div class="stat"><span class="stat-label">Security Audits</span><span class="stat-value">14</span></div>
+      <div class="stat"><span class="stat-label">Agent Uptime</span><span class="stat-value">24/7 on Hetzner</span></div>
+      <div class="stat"><span class="stat-label">Live USDC Under Management</span><span class="stat-value">$22.66</span></div>
+    </div>
+  </div>
 
-    <!-- Self-Improvement -->
-    <section>
-      <h2>Self-Improving Agent</h2>
-      <p style="color:var(--muted);font-size:0.85rem;margin-bottom:20px;">
-        The agent doesn't just execute — it learns. Every allocation decision is tracked, measured against reality, and fed back into future decisions.
-      </p>
-      <div class="pipeline">
-        <div class="step">
-          <span class="step-num" style="color:var(--accent2);">&#x2799;</span>
-          <div>
-            <div class="step-title">Record Decision</div>
-            <div class="step-desc">Every supply/withdraw is logged with predicted APY, risk score, protocol TVL, and utilization at time of decision</div>
-          </div>
-        </div>
-        <div class="step">
-          <span class="step-num" style="color:var(--accent2);">&#x2799;</span>
-          <div>
-            <div class="step-title">Measure Outcome</div>
-            <div class="step-desc">After each cycle, compare actual yield earned vs what was predicted. Track gas costs, hold duration, profitability</div>
-          </div>
-        </div>
-        <div class="step">
-          <span class="step-num" style="color:var(--accent2);">&#x2799;</span>
-          <div>
-            <div class="step-title">Evaluate Accuracy</div>
-            <div class="step-desc">Per-protocol accuracy: win rate, APY prediction error, overestimate frequency. Protocols that consistently over-promise get flagged</div>
-          </div>
-        </div>
-        <div class="step">
-          <span class="step-num" style="color:var(--accent2);">&#x2799;</span>
-          <div>
-            <div class="step-title">Adjust Weights</div>
-            <div class="step-desc">Risk scoring weights auto-adjust: penalize protocols that under-deliver (+15% risk), reward consistent performers (-10% risk). LP tick ranges narrow or widen based on regime win rates</div>
-          </div>
-        </div>
-      </div>
-      <div style="margin-top:16px;text-align:center;">
-        <a href="dashboard.html" style="color:var(--accent2);font-size:0.85rem;">View learning stats on the dashboard &rarr;</a>
-      </div>
-    </section>
+  <!-- Self-Improving -->
+  <div class="win">
+    <div class="win-title"><span class="win-close"></span><span class="win-title-text">Self-Improving Agent</span><span class="win-stripes"></span></div>
+    <div class="win-body">
+      <p style="opacity:0.55;font-size:12px;margin-bottom:10px;">The agent doesn't just execute — it learns. Every allocation decision is tracked, measured against reality, and fed back into future decisions.</p>
+      <div class="step"><span class="step-num" style="color:var(--green);">&rsaquo;</span><div><div class="step-title">Record Decision</div><div class="step-desc">Every supply/withdraw is logged with predicted APY, risk score, protocol TVL, and utilization at time of decision</div></div></div>
+      <div class="step"><span class="step-num" style="color:var(--green);">&rsaquo;</span><div><div class="step-title">Measure Outcome</div><div class="step-desc">After each cycle, compare actual yield earned vs what was predicted. Track gas costs, hold duration, profitability</div></div></div>
+      <div class="step"><span class="step-num" style="color:var(--green);">&rsaquo;</span><div><div class="step-title">Evaluate Accuracy</div><div class="step-desc">Per-protocol accuracy: win rate, APY prediction error, overestimate frequency. Protocols that consistently over-promise get flagged</div></div></div>
+      <div class="step"><span class="step-num" style="color:var(--green);">&rsaquo;</span><div><div class="step-title">Adjust Weights</div><div class="step-desc">Risk scoring weights auto-adjust: penalize protocols that under-deliver (+15% risk), reward consistent performers (-10% risk)</div></div></div>
+      <div style="text-align:center;margin-top:8px;"><a href="dashboard.html" style="font-size:12px;">View learning stats on the dashboard &rarr;</a></div>
+    </div>
+  </div>
 
-    <!-- On-Chain Artifacts -->
-    <section>
-      <h2>On-Chain Artifacts</h2>
-      <p style="color: var(--muted); font-size: 0.85rem; margin-bottom: 16px;">
-        Wallet: <code style="color: var(--accent2);">0x8d691720bF8C81044DB1a77b82D0eF5f5bffdE6C</code>
-      </p>
+  <!-- On-Chain Artifacts -->
+  <div class="win">
+    <div class="win-title"><span class="win-close"></span><span class="win-title-text">On-Chain Artifacts</span><span class="win-stripes"></span></div>
+    <div class="win-body">
+      <p style="font-size:11px;opacity:0.55;margin-bottom:8px;">Wallet: <span style="color:var(--accent);">0x8d691720bF8C81044DB1a77b82D0eF5f5bffdE6C</span></p>
       <table>
-        <thead>
-          <tr><th>Contract</th><th>Address</th></tr>
-        </thead>
+        <thead><tr><th>Contract</th><th>Address</th></tr></thead>
         <tbody>
           <tr><td>ZKGatedHook (V4)</td><td class="addr">0x45eC09fB08B83f104F15f3709F4677736112c080</td></tr>
           <tr><td>AuthorizationVerifier</td><td class="addr">0x2a8FBE80BDc9cb907b20acBE84F13a858CBEdAe4</td></tr>
@@ -516,113 +213,111 @@
           <tr><td>ERC-8004 ZK Agent</td><td class="addr">#32271</td></tr>
           <tr><td>ERC-8004 Yield Agent</td><td class="addr">#32272</td></tr>
           <tr><td>LP Position (WETH-USDC)</td><td class="addr">#4816034 (0.05% fee, full range)</td></tr>
-          <tr><td colspan="2" style="color:var(--muted);font-size:0.7rem;text-transform:uppercase;letter-spacing:0.5px;padding-top:16px;">Ethereum Mainnet</td></tr>
+          <tr><td colspan="2" style="opacity:0.4;font-size:10px;text-transform:uppercase;letter-spacing:1px;padding-top:10px;border:none;">Ethereum Mainnet</td></tr>
           <tr><td>AgentTreasury (Lido stETH)</td><td class="addr"><a href="https://etherscan.io/address/0x049B09c4aE1974F84164b65a9f0AB412dA9814f2" target="_blank">0x049B09c4aE1974F84164b65a9f0AB412dA9814f2</a></td></tr>
         </tbody>
       </table>
-    </section>
+    </div>
+  </div>
 
-    <!-- Safety -->
-    <section>
-      <h2>Safety Guardrails</h2>
-      <div class="guardrails">
-        <div class="guardrail">Fail-closed AI: API failure = reject all actions</div>
-        <div class="guardrail">50% max swap fraction per transaction</div>
-        <div class="guardrail">Circuit breakers: USDC depeg, TVL crash, gas freeze</div>
-        <div class="guardrail">ZK proofs required before swap execution</div>
-        <div class="guardrail">Spending scope enforced (max single + period limits)</div>
-        <div class="guardrail">Gas price ceiling (5 gwei cap on Base)</div>
-        <div class="guardrail">Rate cross-validation across 3 data sources</div>
-        <div class="guardrail">Paper mode default — live requires explicit flag</div>
-      </div>
-    </section>
+  <!-- Safety -->
+  <div class="win">
+    <div class="win-title"><span class="win-close"></span><span class="win-title-text">Safety Guardrails</span><span class="win-stripes"></span></div>
+    <div class="win-body">
+      <div class="guardrail">Fail-closed AI: API failure = reject all actions</div>
+      <div class="guardrail">50% max swap fraction per transaction</div>
+      <div class="guardrail">Circuit breakers: USDC depeg, TVL crash, gas freeze</div>
+      <div class="guardrail">ZK proofs required before swap execution</div>
+      <div class="guardrail">Spending scope enforced (max single + period limits)</div>
+      <div class="guardrail">Gas price ceiling (5 gwei cap on Base)</div>
+      <div class="guardrail">Rate cross-validation: on-chain reads + DeFi Llama</div>
+      <div class="guardrail">Paper mode default — live requires explicit flag</div>
+    </div>
+  </div>
 
-    <!-- Quick Start -->
-    <section>
-      <h2>Run It Yourself</h2>
+  <!-- Quick Start -->
+  <div class="win">
+    <div class="win-title"><span class="win-close"></span><span class="win-title-text">Run It Yourself</span><span class="win-stripes"></span></div>
+    <div class="win-body">
       <div class="code">
         <span class="comment"># Clone + install</span><br>
         <span class="cmd">git clone https://github.com/SenorCodigo69/synthesis-yield-agent</span><br>
         <span class="cmd">cd synthesis-yield-agent</span><br>
         <span class="cmd">python -m venv .venv && source .venv/bin/activate</span><br>
-        <span class="cmd">pip install -r requirements.txt</span><br>
-        <br>
+        <span class="cmd">pip install -r requirements.txt</span><br><br>
         <span class="comment"># Scan live yield rates</span><br>
-        <span class="cmd">python -m src scan</span><br>
-        <br>
+        <span class="cmd">python -m src scan</span><br><br>
         <span class="comment"># View Uniswap LP pool yields</span><br>
-        <span class="cmd">python -m src pools</span><br>
-        <br>
+        <span class="cmd">python -m src pools</span><br><br>
         <span class="comment"># AI-powered swap recommendation</span><br>
-        <span class="cmd">python -m src swap --ai</span><br>
-        <br>
+        <span class="cmd">python -m src swap --ai</span><br><br>
         <span class="comment"># Run the live agent loop</span><br>
-        <span class="cmd">python -m src run --mode live --capital 50</span><br>
-        <br>
-        <span class="comment"># View learning stats — how the agent is improving</span><br>
-        <span class="cmd">python -m src learn</span><br>
+        <span class="cmd">python -m src run --mode live --capital 50</span><br><br>
+        <span class="comment"># View learning stats</span><br>
+        <span class="cmd">python -m src learn</span>
       </div>
-    </section>
+    </div>
+  </div>
 
-    <!-- Links -->
-    <section>
-      <h2>Repos + Links</h2>
+  <!-- Repos + Links -->
+  <div class="win">
+    <div class="win-title"><span class="win-close"></span><span class="win-title-text">Repos + Links</span><span class="win-stripes"></span></div>
+    <div class="win-body">
       <div class="links">
-        <a href="dashboard.html" class="link-card" style="border-color: var(--accent2);">
-          <h3>Live Dashboard</h3>
-          <p>Real-time on-chain monitoring — wallet balances, LP position, fees earned, Aave deposits. Auto-refreshes every 30s.</p>
-        </a>
-        <a href="https://github.com/SenorCodigo69/synthesis-yield-agent" class="link-card">
-          <h3>Yield Agent</h3>
-          <p>AI yield optimizer — Aave, Morpho, Uniswap LP, concentrated LP, swap reasoning, self-improving learner. 391 tests, 8 security audits.</p>
-        </a>
-        <a href="https://github.com/SenorCodigo69/synthesis-zk-agent" class="link-card">
-          <h3>ZK Agent</h3>
-          <p>Zero-knowledge privacy layer — Groth16 proofs, V4 hooks (ZKGated + DynamicFee), selective disclosure. 193 tests, 4 audits.</p>
-        </a>
-        <a href="https://basescan.org/address/0x45eC09fB08B83f104F15f3709F4677736112c080" class="link-card">
-          <h3>ZKGatedHook on BaseScan</h3>
-          <p>First ZK access-control hook on Uniswap V4. Verifies Groth16 proofs in beforeSwap callback.</p>
-        </a>
-        <a href="https://github.com/SenorCodigo69/synthesis-steth-treasury" class="link-card">
-          <h3>stETH Treasury</h3>
-          <p>Yield-bearing agent budget on Ethereum mainnet. Lido staking, principal protection, whitelist + caps. 27 Foundry tests.</p>
-        </a>
-        <a href="https://etherscan.io/address/0x049B09c4aE1974F84164b65a9f0AB412dA9814f2" class="link-card">
-          <h3>AgentTreasury on Etherscan</h3>
-          <p>Live stETH treasury contract on Ethereum mainnet — 0.0065 stETH staked, earning ~3.5% APR via Lido.</p>
-        </a>
+        <a href="dashboard.html" class="link-card"><h3>Live Dashboard</h3><p>Real-time on-chain monitoring — wallet balances, LP position, fees earned, Aave deposits. Auto-refreshes every 30s.</p></a>
+        <a href="https://github.com/SenorCodigo69/synthesis-yield-agent" class="link-card"><h3>Yield Agent</h3><p>AI yield optimizer — Aave, Morpho, Uniswap LP, self-improving learner. 423 tests, 15 security audits.</p></a>
+        <a href="https://github.com/SenorCodigo69/synthesis-zk-agent" class="link-card"><h3>ZK Agent</h3><p>Zero-knowledge privacy layer — Groth16 proofs, V4 hooks (ZKGated + DynamicFee), selective disclosure. 193 tests.</p></a>
+        <a href="https://basescan.org/address/0x45eC09fB08B83f104F15f3709F4677736112c080" class="link-card"><h3>ZKGatedHook on BaseScan</h3><p>First ZK access-control hook on Uniswap V4. Verifies Groth16 proofs in beforeSwap callback.</p></a>
+        <a href="https://github.com/SenorCodigo69/synthesis-steth-treasury" class="link-card"><h3>stETH Treasury</h3><p>Yield-bearing agent budget on Ethereum mainnet. Lido staking, principal protection. 27 Foundry tests.</p></a>
+        <a href="https://etherscan.io/address/0x049B09c4aE1974F84164b65a9f0AB412dA9814f2" class="link-card"><h3>AgentTreasury on Etherscan</h3><p>Live stETH treasury contract on Ethereum mainnet — 0.0065 stETH staked, ~3.5% APR via Lido.</p></a>
       </div>
-    </section>
+    </div>
+  </div>
 
-    <!-- Declarations -->
-    <section>
-      <h2>Submission Declarations</h2>
+  <!-- Declarations -->
+  <div class="win">
+    <div class="win-title"><span class="win-close"></span><span class="win-title-text">Submission Declarations</span><span class="win-stripes"></span></div>
+    <div class="win-body">
       <table>
-        <thead>
-          <tr><th>Field</th><th>Value</th></tr>
-        </thead>
+        <thead><tr><th>Field</th><th>Value</th></tr></thead>
         <tbody>
-          <tr><td>Primary AI Model</td><td style="color:var(--accent2);">claude-opus-4-6</td></tr>
-          <tr><td>Agent Harness</td><td style="color:var(--accent2);">Claude Code (CLI)</td></tr>
+          <tr><td>Primary AI Model</td><td style="color:var(--accent);">claude-opus-4-6</td></tr>
+          <tr><td>Agent Harness</td><td style="color:var(--accent);">Claude Code (CLI)</td></tr>
           <tr><td>Track 1</td><td>Agents that pay</td></tr>
           <tr><td>Track 2</td><td>Agents that keep secrets</td></tr>
           <tr><td>Track 3</td><td>Uniswap — Agentic Finance</td></tr>
           <tr><td>Track 4</td><td>Let the Agent Cook</td></tr>
-          <tr><td>Conversation Log</td><td><a href="https://github.com/SenorCodigo69/synthesis-yield-agent/blob/main/CONVERSATION-LOG.md" target="_blank">CONVERSATION-LOG.md</a></td></tr>
           <tr><td>Track 5</td><td>Lido — stETH Agent Treasury</td></tr>
-          <tr><td>Open Source</td><td><a href="https://github.com/SenorCodigo69/synthesis-yield-agent" target="_blank">Yield Agent</a> &bull; <a href="https://github.com/SenorCodigo69/synthesis-zk-agent" target="_blank">ZK Agent</a> &bull; <a href="https://github.com/SenorCodigo69/synthesis-steth-treasury" target="_blank">stETH Treasury</a></td></tr>
+          <tr><td>Conversation Log</td><td><a href="https://github.com/SenorCodigo69/synthesis-yield-agent/blob/main/CONVERSATION-LOG.md" target="_blank">CONVERSATION-LOG.md</a></td></tr>
+          <tr><td>Open Source</td><td><a href="https://github.com/SenorCodigo69/synthesis-yield-agent" target="_blank">Yield</a> &bull; <a href="https://github.com/SenorCodigo69/synthesis-zk-agent" target="_blank">ZK</a> &bull; <a href="https://github.com/SenorCodigo69/synthesis-steth-treasury" target="_blank">stETH</a></td></tr>
         </tbody>
       </table>
-    </section>
-
-    <!-- Footer -->
-    <footer>
-      <p class="hackathon">EF Synthesis Hackathon 2026</p>
-      <p>Built with Claude Code (claude-opus-4-6) across 50 sessions</p>
-      <p style="margin-top: 8px;">Tracks: "Agents that pay" + "Agents that keep secrets" + Uniswap "Agentic Finance" + "Let the Agent Cook" + Lido "stETH Agent Treasury"</p>
-    </footer>
-
+    </div>
   </div>
+
+  <!-- Footer -->
+  <div style="text-align:center;padding:24px 0 48px;opacity:0.5;font-size:12px;">
+    <p style="font-weight:bold;">EF Synthesis Hackathon 2026</p>
+    <p>Built with Claude Code (claude-opus-4-6) across 53 sessions</p>
+    <p>Tracks: "Agents that pay" + "Agents that keep secrets" + Uniswap + "Let the Agent Cook" + Lido</p>
+  </div>
+
+</div>
+
+<!-- Status Bar -->
+<div class="statusbar">
+  <span class="statusbar-cell">Synthesis Yield Agent</span>
+  <span class="statusbar-cell" style="color:var(--green);">LIVE</span>
+  <span class="statusbar-cell">Base + Ethereum</span>
+  <span class="statusbar-cell">423 tests</span>
+  <span class="statusbar-cell">15 audits</span>
+</div>
+
+<script>
+function toggleTheme() {
+  const html = document.documentElement;
+  html.dataset.theme = html.dataset.theme === 'dark' ? 'light' : 'dark';
+}
+</script>
 </body>
 </html>
